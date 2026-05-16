@@ -4,6 +4,7 @@ import { ArrowRight, Mail, Lock, Fingerprint, Github, Twitter, Layout } from 'lu
 import { useNavigate } from 'react-router-dom';
 import { signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { auth } from '../lib/firebase';
+import { useAuthStore } from '../store/authStore';
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -13,6 +14,13 @@ export default function AuthPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { user, isLoading: isAuthLoading } = useAuthStore();
+
+  React.useEffect(() => {
+    if (!isAuthLoading && user) {
+      navigate('/workspace', { replace: true });
+    }
+  }, [user, isAuthLoading, navigate]);
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -200,7 +208,10 @@ export default function AuthPage() {
                 onClick={handleGoogleLogin}
                 className="w-full bg-white/[0.03] border border-white/5 py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-white/[0.06] transition-all text-zinc-400"
               >
-                <Github size={16} /> <span className="text-[10px] font-bold uppercase tracking-widest">Google Integration</span>
+                <div className="w-4 h-4 rounded-full bg-white flex items-center justify-center">
+                   <div className="w-2 h-2 bg-indigo-600 rounded-full" />
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-widest">Google Integration</span>
               </button>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo } from 'react';
+import React, { createContext, useContext, useMemo, useEffect, useState } from 'react';
 import { 
   collection, 
   query, 
@@ -8,7 +8,8 @@ import {
   serverTimestamp, 
   where,
   or,
-  getDocs
+  getDocs,
+  onSnapshot
 } from 'firebase/firestore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
@@ -29,6 +30,8 @@ const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefin
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const { user, isLoading: isAuthLoading } = useAuthStore();
   const queryClient = useQueryClient();
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [isActivitiesLoading, setIsActivitiesLoading] = useState(true);
 
   // Fetch Projects using TanStack Query
   const { data: projects = [], isLoading: isProjectsLoading } = useQuery({
@@ -49,19 +52,23 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     enabled: !!user,
   });
 
-  // Fetch Activities using TanStack Query
-  const { data: activities = [], isLoading: isActivitiesLoading } = useQuery({
-    queryKey: ['activities', user?.uid],
-    queryFn: async () => {
-      if (!user) return [];
-      const q = query(
-        collection(db, 'activities'),
-        where('userId', '==', user.uid),
-        orderBy('timestamp', 'desc'),
-        limit(15)
-      );
-      const snapshot = await getDocs(q);
-      return snapshot.docs.map(doc => {
+  // Real-time Activities Listener
+  useEffect(() => {
+    if (!user) {
+      setActivities([]);
+      setIsActivitiesLoading(false);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'activities'),
+      where('userId', '==', user.uid),
+      orderBy('timestamp', 'desc'),
+      limit(15)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const items = snapshot.docs.map(doc => {
         const data = doc.data();
         const ts = data.timestamp;
         return {
@@ -71,9 +78,15 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           time: ts ? `${Math.floor((Date.now() - (ts.toMillis ? ts.toMillis() : Date.now())) / 60000)}m ago` : 'Just now'
         };
       }) as Activity[];
-    },
-    enabled: !!user,
-  });
+      setActivities(items);
+      setIsActivitiesLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'activities');
+      setIsActivitiesLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
 
   const activityMutation = useMutation({
     mutationFn: async (activity: Omit<Activity, 'id' | 'time'>) => {
