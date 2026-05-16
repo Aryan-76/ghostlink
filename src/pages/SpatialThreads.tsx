@@ -11,50 +11,45 @@ import {
   Layers,
   Zap,
   Globe,
-  Cpu
+  Layout,
+  Server,
+  Activity
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
-const ThreadCard = ({ title, status, participants, desc, active, delay }: any) => (
+import { useWorkspace } from '../hooks/useWorkspace';
+
+const ThreadCard = ({ title, status, members, description, active, delay }: any) => (
   <motion.div 
-    initial={{ opacity: 0, y: 20 }}
+    initial={{ opacity: 0, y: 12 }}
     animate={{ opacity: 1, y: 0 }}
     transition={{ delay }}
-    whileHover={{ scale: 1.02 }}
-    className={`glass p-6 rounded-3xl relative overflow-hidden transition-all duration-500 group cursor-pointer ${
-      active ? 'border-ghost-cyan/40 shadow-[0_0_40px_rgba(0,242,255,0.1)]' : 'hover:border-white/10'
+    className={`bg-[#0A0B0E] border border-white/5 p-6 rounded-2xl relative overflow-hidden transition-all duration-300 group cursor-pointer ${
+      active ? 'border-indigo-500/40 shadow-xl' : 'hover:border-white/10'
     }`}
   >
-    {active && (
-      <motion.div 
-        layoutId="active-bar"
-        className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-ghost-cyan to-ghost-violet" 
-      />
-    )}
-    <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-white/2 rounded-full blur-2xl group-hover:bg-white/5 transition-all" />
-    
     <div className="relative z-10 flex flex-col h-full">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <Hash size={16} className={active ? 'text-ghost-cyan cyan-text-glow' : 'text-slate-600'} />
-          <span className={`text-sm font-bold italic tracking-tight ${active ? 'text-white' : 'text-slate-400'}`}>{title}</span>
+          <Activity size={14} className={active ? 'text-indigo-400' : 'text-zinc-600'} />
+          <span className={`text-sm font-semibold tracking-tight ${active ? 'text-white' : 'text-zinc-500'}`}>{title}</span>
         </div>
-        <div className={`w-2 h-2 rounded-full ${status === 'active' ? 'bg-green-500 bg-glow-green animate-pulse' : 'bg-slate-800'}`} />
+        <div className={`w-1.5 h-1.5 rounded-full ${status === 'active' ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-800'}`} />
       </div>
 
-      <p className="text-xs text-slate-500 mb-6 leading-relaxed flex-1 italic">{desc}</p>
+      <p className="text-xs text-zinc-500 mb-6 leading-relaxed flex-1">{description || 'No system descriptor available.'}</p>
 
       <div className="flex items-center justify-between border-t border-white/5 pt-4 mt-auto">
-        <div className="flex -space-x-2">
-          {participants.map((p: any, i: number) => (
-            <div key={i} className="w-8 h-8 rounded-full border-2 border-ghost-charcoal bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-500 ring-1 ring-white/5">
+        <div className="flex -space-x-1.5">
+          {members.map((p: any, i: number) => (
+            <div key={i} className="w-7 h-7 rounded-sm border border-[#0A0B0E] bg-zinc-800 flex items-center justify-center text-[9px] font-bold text-zinc-500">
               {p[0]}
             </div>
           ))}
-          <div className="w-8 h-8 rounded-full border-2 border-ghost-charcoal bg-ghost-cyan text-ghost-navy flex items-center justify-center text-[10px] font-black">+</div>
+          <div className="w-7 h-7 rounded-sm border border-[#0A0B0E] bg-indigo-600 text-white flex items-center justify-center text-[9px] font-bold">+</div>
         </div>
-        <button className={`p-2 rounded-lg transition-all ${active ? 'text-ghost-cyan bg-ghost-cyan/10' : 'text-slate-600 hover:text-slate-400'}`}>
-          <ChevronRight size={18} />
+        <button className={`p-1.5 rounded-lg transition-all ${active ? 'text-indigo-400 bg-indigo-400/10' : 'text-zinc-600 hover:text-zinc-400'}`}>
+          <ChevronRight size={16} />
         </button>
       </div>
     </div>
@@ -62,151 +57,150 @@ const ThreadCard = ({ title, status, participants, desc, active, delay }: any) =
 );
 
 export default function SpatialThreadView() {
+  const { projects } = useWorkspace();
+
   return (
-    <div className="p-8 space-y-12 h-full overflow-y-auto custom-scrollbar">
+    <div className="p-8 space-y-12 h-full overflow-y-auto scrollbar-hidden">
       <motion.div 
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
         className="flex flex-col md:flex-row md:items-end justify-between gap-8"
       >
         <div>
            <div className="flex items-center gap-2 mb-2">
-              <Layers size={16} className="text-ghost-violet" />
-              <span className="text-[10px] font-mono text-ghost-violet uppercase tracking-[0.3em] font-bold">Multidimensional View</span>
+              <Layers size={14} className="text-indigo-400" />
+              <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Environment Topology</span>
            </div>
-           <h1 className="text-4xl font-display font-black text-white italic tracking-tighter">Spatial Threads</h1>
-           <p className="text-slate-400 mt-2">Visualizing synchronous intelligence bridges across the global network.</p>
+           <h1 className="text-4xl font-semibold text-white tracking-tight">Active Clusters</h1>
+           <p className="text-sm text-zinc-500 mt-2">Visualization of project deployments and team allocation across global regions.</p>
         </div>
         <div className="flex gap-4">
-           <div className="glass p-1 rounded-xl flex items-center gap-1">
-              <button className="px-4 py-2 bg-white/5 rounded-lg text-[10px] font-mono text-white flex items-center gap-2 transition-all hover:bg-white/10"><Globe size={14} /> GLOBAL</button>
-              <button className="px-4 py-2 hover:bg-white/2 rounded-lg text-[10px] font-mono text-slate-600 transition-all uppercase tracking-widest">PRIVATE</button>
+           <div className="bg-white/[0.03] border border-white/5 p-1 rounded-xl flex items-center gap-1">
+              <button className="px-4 py-2 bg-white/5 rounded-lg text-[10px] font-bold text-white flex items-center gap-2 transition-all">
+                <Globe size={12} /> GLOBAL
+              </button>
+              <button className="px-4 py-2 hover:bg-white/[0.02] rounded-lg text-[10px] font-bold text-zinc-600 transition-all uppercase tracking-widest">REGIONAL</button>
            </div>
-           <button className="px-6 py-2.5 bg-white text-ghost-navy rounded-full text-sm font-bold shadow-[0_0_30px_rgba(255,255,255,0.1)] hover:scale-105 transition-all flex items-center gap-2 group">
-             <Plus size={16} className="group-hover:rotate-90 transition-transform" /> Forge Thread
+           <button className="px-6 py-2.5 bg-white text-black rounded-xl text-xs font-bold shadow-xl hover:bg-zinc-200 transition-all flex items-center gap-2 uppercase tracking-widest">
+             <Plus size={16} /> Create Stream
            </button>
         </div>
       </motion.div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-        <ThreadCard 
-          title="nexus-core-sync"
-          status="active"
-          participants={['Sarah', 'AI_7']}
-          desc="Synchronizing the primary kernel with the Vanguard nodes. High latency detected in Sector 4."
-          active
-          delay={0.1}
-        />
-        <ThreadCard 
-          title="spectral-design-v2"
-          status="idle"
-          participants={['Elena', 'Marcus']}
-          desc="Iterating on the glassmorphic architecture for the mobile substrate. Pending review."
-          delay={0.2}
-        />
-        <ThreadCard 
-          title="vanguard-ops"
-          status="active"
-          participants={['Alex', 'AI_3']}
-          desc="Monitoring security protocols across the global distributed network. Zero trust active."
-          delay={0.3}
-        />
-        <ThreadCard 
-          title="intelligence-bridge"
-          status="active"
-          participants={['Sarah', 'Elena']}
-          desc="Synthesizing cross-domain knowledge maps to improve AI coherence levels."
-          delay={0.4}
-        />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        {projects.map((project, i) => (
+          <ThreadCard 
+            key={project.id}
+            {...project}
+            delay={0.1 + i * 0.1}
+            active={i === 0}
+          />
+        ))}
       </div>
 
       {/* Spatial Visualization Map (Abstract) */}
       <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
+        initial={{ opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: 0.5 }}
-        className="relative glass rounded-[3rem] p-12 min-h-[550px] overflow-hidden flex flex-col items-center justify-center space-y-8 bg-ghost-charcoal/20 border-white/5 shadow-2xl"
+        className="relative bg-[#0A0B0E] border border-white/5 rounded-3xl p-12 min-h-[500px] overflow-hidden flex flex-col items-center justify-center space-y-8 shadow-2xl"
       >
-         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10" />
+         <div className="absolute inset-0 bg-[#020306]/40" />
          
-         <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
-            <svg width="100%" height="100%" className="blur-sm">
+         <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-10">
+            <svg width="100%" height="100%" className="blur-[1px]">
                 <motion.line 
                   initial={{ pathLength: 0 }}
                   animate={{ pathLength: 1 }}
-                  transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
-                  x1="50%" y1="50%" x2="20%" y2="80%" stroke="#00f2ff" strokeWidth="1" />
+                  transition={{ duration: 3, repeat: Infinity, repeatDelay: 2 }}
+                  x1="50%" y1="50%" x2="25%" y2="75%" stroke="white" strokeWidth="0.5" />
                 <motion.line 
                   initial={{ pathLength: 0 }}
                   animate={{ pathLength: 1 }}
-                  transition={{ duration: 2, delay: 1, repeat: Infinity, repeatDelay: 3 }}
-                  x1="50%" y1="50%" x2="80%" y2="80%" stroke="#00f2ff" strokeWidth="1" />
+                  transition={{ duration: 3, delay: 1, repeat: Infinity, repeatDelay: 2 }}
+                  x1="50%" y1="50%" x2="75%" y2="75%" stroke="white" strokeWidth="0.5" />
                 <motion.line 
                   initial={{ pathLength: 0 }}
                   animate={{ pathLength: 1 }}
-                  transition={{ duration: 2, delay: 2, repeat: Infinity, repeatDelay: 3 }}
-                  x1="50%" y1="50%" x2="50%" y2="20%" stroke="#bd00ff" strokeWidth="1" />
+                  transition={{ duration: 3, delay: 2, repeat: Infinity, repeatDelay: 2 }}
+                  x1="50%" y1="50%" x2="50%" y2="25%" stroke="white" strokeWidth="0.5" />
             </svg>
          </div>
 
          {/* Central Node */}
          <motion.div 
             animate={{ 
-              boxShadow: ["0 0 20px rgba(0,242,255,0.2)", "0 0 50px rgba(0,242,255,0.4)", "0 0 20px rgba(0,242,255,0.2)"]
+              boxShadow: ["0 0 20px rgba(79,70,229,0.1)", "0 0 40px rgba(79,70,229,0.2)", "0 0 20px rgba(79,70,229,0.1)"]
             }}
-            transition={{ duration: 3, repeat: Infinity }}
-            className="relative group cursor-pointer"
+            transition={{ duration: 4, repeat: Infinity }}
+            className="relative z-10"
          >
-            <div className="absolute inset-0 bg-ghost-cyan/20 rounded-full blur-3xl animate-pulse" />
-            <div className="relative w-32 h-32 glass rounded-full flex items-center justify-center border-ghost-cyan/40 shadow-[0_0_50px_rgba(0,242,255,0.2)] hover:scale-110 transition-transform">
+            <div className="w-32 h-32 bg-[#050608] border border-white/10 rounded-full flex items-center justify-center shadow-2xl">
                <div className="text-center">
-                  <Cpu size={32} className="text-ghost-cyan mx-auto mb-2 cyan-glow" />
-                  <span className="text-[10px] font-mono text-white italic tracking-tighter uppercase font-bold">HQ CORE</span>
+                  <Layout size={32} className="text-indigo-400 mx-auto mb-2" />
+                  <span className="text-[10px] font-bold text-white uppercase tracking-widest">Main Hub</span>
                </div>
             </div>
          </motion.div>
 
          <div className="grid grid-cols-3 gap-32 relative z-10">
             <motion.div 
-              whileHover={{ y: -10 }}
-              className="glass p-4 rounded-2xl w-40 h-28 flex flex-col justify-between hover:bg-white/5 transition-all shadow-xl"
+              whileHover={{ y: -4 }}
+              className="bg-white/[0.02] border border-white/5 p-5 rounded-xl w-44 h-32 flex flex-col justify-between hover:bg-white/[0.04] transition-all"
             >
-               <span className="text-[8px] font-mono text-ghost-cyan uppercase tracking-[0.4em]">Node_A1</span>
+               <span className="text-[8px] font-bold text-indigo-400 uppercase tracking-widest">West-1 Region</span>
                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-bold text-white italic">SYDNEY</h4>
-                  <div className="w-1.5 h-1.5 rounded-full bg-green-500 cyan-glow animate-pulse" />
+                  <h4 className="text-xs font-semibold text-white uppercase">US-WEST</h4>
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
                </div>
             </motion.div>
             <motion.div 
-              whileHover={{ y: -30 }}
-              className="glass p-4 rounded-2xl w-40 h-28 flex flex-col justify-between hover:bg-white/5 transition-all -translate-y-20 border-ghost-violet/30 bg-ghost-violet/5 shadow-xl shadow-ghost-violet/10"
+              whileHover={{ y: -4 }}
+              className="bg-white/[0.02] border border-white/5 p-5 rounded-xl w-44 h-32 flex flex-col justify-between hover:bg-white/[0.04] transition-all -translate-y-20"
             >
-                <span className="text-[8px] font-mono text-ghost-violet uppercase tracking-[0.4em]">Node_V9</span>
+                <span className="text-[8px] font-bold text-indigo-400 uppercase tracking-widest">Central-1 Region</span>
                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-bold text-white italic">TOKYO</h4>
-                  <div className="w-1.5 h-1.5 rounded-full bg-ghost-violet violet-glow animate-pulse" />
+                  <h4 className="text-xs font-semibold text-white uppercase">EU-CENTRAL</h4>
+                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
                </div>
             </motion.div>
             <motion.div 
-              whileHover={{ y: -10 }}
-              className="glass p-4 rounded-2xl w-40 h-28 flex flex-col justify-between hover:bg-white/5 transition-all shadow-xl"
+              whileHover={{ y: -4 }}
+              className="bg-white/[0.02] border border-white/5 p-5 rounded-xl w-44 h-32 flex flex-col justify-between hover:bg-white/[0.04] transition-all"
             >
-                <span className="text-[8px] font-mono text-ghost-cyan uppercase tracking-[0.4em]">Node_X4</span>
+                <span className="text-[8px] font-bold text-indigo-400 uppercase tracking-widest">East-ASIA Region</span>
                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-bold text-white italic">LONDON</h4>
-                  <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-lg animate-pulse" />
+                  <h4 className="text-xs font-semibold text-white uppercase">APAC-EAST</h4>
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
                </div>
             </motion.div>
          </div>
 
          {/* Floating Interface Controls */}
-         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-4">
-            <button className="glass p-3 rounded-2xl text-slate-400 hover:text-white transition-all backdrop-blur-3xl hover:bg-white/5"><Maximize2 size={20} /></button>
-            <button className="glass p-3 rounded-2xl text-slate-400 hover:text-white transition-all backdrop-blur-3xl hover:bg-white/5"><Minimize2 size={20} /></button>
-            <div className="h-full w-px bg-white/5 mx-2" />
-            <button className="glass p-3 rounded-2xl text-slate-400 hover:text-white transition-all backdrop-blur-3xl hover:bg-white/5"><Command size={20} /></button>
+         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-4 backdrop-blur-xl bg-white/[0.02] p-2 rounded-2xl border border-white/5">
+            <button className="p-2.5 rounded-xl text-zinc-500 hover:text-white hover:bg-white/5 transition-all"><Maximize2 size={18} /></button>
+            <button className="p-2.5 rounded-xl text-zinc-500 hover:text-white hover:bg-white/5 transition-all"><Minimize2 size={18} /></button>
+            <div className="w-px bg-white/5 h-8 my-auto mx-1" />
+            <button className="p-2.5 rounded-xl text-zinc-500 hover:text-white hover:bg-white/5 transition-all"><Settings size={18} /></button>
          </div>
       </motion.div>
     </div>
   );
 }
+
+const Settings = ({ size, className }: any) => (
+  <svg 
+    width={size} 
+    height={size} 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    stroke="currentColor" 
+    strokeWidth="2" 
+    strokeLinecap="round" 
+    strokeLinejoin="round" 
+    className={className}
+  >
+    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+    <circle cx="12" cy="12" r="3"></circle>
+  </svg>
+);

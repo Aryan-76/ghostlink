@@ -1,22 +1,19 @@
-@import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Geist:wght@400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Geist", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
-  --color-ghost-navy: #020306;
-  --color-ghost-charcoal: #0a0c12;
-  --color-ghost-glass: rgba(255, 255, 255, 0.03);
-  --color-ghost-cyan: #22d3ee;
-  --color-ghost-violet: #8b5cf6;
-  --color-ghost-border: rgba(255, 255, 255, 0.08);
+  --color-workspace-bg: #020306;
+  --color-workspace-card: #0a0c12;
+  --color-workspace-border: rgba(255, 255, 255, 0.05);
 }
 
 @layer base {
   body {
-    @apply bg-ghost-navy text-slate-300 antialiased font-sans;
+    @apply bg-workspace-bg text-zinc-400 antialiased font-sans;
   }
   
   h1, h2, h3, h4, h5, h6 {
@@ -24,52 +21,10 @@
   }
 }
 
-.glass, .glass-panel {
-  @apply bg-ghost-glass backdrop-blur-[12px] border border-ghost-border;
+.glass-panel {
+  @apply bg-white/[0.02] backdrop-blur-md border border-workspace-border;
 }
 
-.glass-pill {
-  @apply bg-white/5 backdrop-blur-md border border-white/10 rounded-full px-3 py-1 text-xs font-mono;
-}
-
-.cyan-glow {
-  background: radial-gradient(circle at 50% 50%, rgba(34, 211, 238, 0.1), transparent 70%);
-}
-
-.cyan-text-glow {
-  text-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
-}
-
-.violet-glow {
-  background: radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.15), transparent 70%);
-}
-
-.glow-accent {
-  box-shadow: 0 0 200px rgba(34, 211, 238, 0.15);
-}
-
-.sidebar-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.cursor-ghost {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #22d3ee;
-  filter: blur(4px);
-  position: absolute;
-}
-
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-}
-
-::-webkit-scrollbar-track {
-  @apply bg-transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  @apply bg-white/10 rounded-full hover:bg-white/20 transition-colors;
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
 }

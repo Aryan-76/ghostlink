@@ -1,123 +1,213 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowRight, Mail, Lock, Fingerprint, Github, Twitter } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { ArrowRight, Mail, Lock, Fingerprint, Github, Twitter, Layout } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { auth } from '../lib/firebase';
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  const handleAuth = (e: React.FormEvent) => {
+  const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    navigate('/workspace');
+    setIsLoading(true);
+    setError(null);
+    try {
+      if (isLogin) {
+        await signInWithEmailAndPassword(auth, email, password);
+      } else {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+        
+        // Update Firebase Auth profile
+        await updateProfile(user, { displayName });
+
+        // Sync to Firestore users collection
+        const { setDoc, doc, serverTimestamp } = await import('firebase/firestore');
+        const { db } = await import('../lib/firebase');
+        await setDoc(doc(db, 'users', user.uid), {
+          userId: user.uid,
+          email: user.email,
+          displayName: displayName,
+          role: 'user',
+          status: 'Active',
+          avatarUrl: '',
+          updatedAt: serverTimestamp()
+        });
+      }
+      navigate('/workspace');
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Authentication failed");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const provider = new GoogleAuthProvider();
+      const userCredential = await signInWithPopup(auth, provider);
+      const user = userCredential.user;
+
+      // Ensure user exists in Firestore
+      const { setDoc, doc, getDoc, serverTimestamp } = await import('firebase/firestore');
+      const { db } = await import('../lib/firebase');
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      
+      if (!userDoc.exists()) {
+        await setDoc(doc(db, 'users', user.uid), {
+          userId: user.uid,
+          email: user.email,
+          displayName: user.displayName || 'Anonymous',
+          role: 'user',
+          status: 'Active',
+          avatarUrl: user.photoURL || '',
+          updatedAt: serverTimestamp()
+        });
+      }
+
+      navigate('/workspace');
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-ghost-navy flex items-center justify-center p-8 relative overflow-hidden">
-      {/* Background Atmosphere */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1000px] h-[1000px] bg-ghost-cyan/5 blur-[150px] rounded-full pointer-events-none" />
+    <div className="min-h-screen bg-[#020306] flex items-center justify-center p-8 relative overflow-hidden">
+      {/* Background Accent */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-indigo-500/5 blur-[120px] rounded-full pointer-events-none" />
       
       <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-md"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-sm relative z-10"
       >
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-ghost-cyan to-ghost-violet flex items-center justify-center mx-auto mb-6 shadow-[0_0_40px_rgba(0,242,255,0.2)]">
-            <Fingerprint size={32} className="text-white" />
+        <div className="text-center mb-10">
+          <div className="w-12 h-12 rounded-xl bg-indigo-600 flex items-center justify-center mx-auto mb-6 shadow-xl">
+            <Layout size={24} className="text-white" />
           </div>
-          <h1 className="text-3xl font-display font-black text-white italic tracking-tighter mb-2">
-            GhostLink Sentinel
+          <h1 className="text-2xl font-bold text-white tracking-tight mb-2">
+            Welcome back
           </h1>
-          <p className="text-slate-400">Secure access to the vanguard network.</p>
+          <p className="text-sm text-zinc-500">Sign in to your GhostLink workspace.</p>
         </div>
 
-        <div className="glass p-8 rounded-3xl shadow-2xl relative">
-          <div className="flex gap-4 mb-8">
+        <div className="bg-[#0A0B0E] border border-white/5 p-8 rounded-2xl shadow-2xl">
+          <div className="flex gap-4 mb-8 border-b border-white/5">
             <button 
               onClick={() => setIsLogin(true)}
-              className={`flex-1 pb-3 text-sm font-bold tracking-widest uppercase transition-all border-b-2 ${
-                isLogin ? 'text-ghost-cyan border-ghost-cyan' : 'text-slate-500 border-transparent hover:text-slate-300'
+              className={`flex-1 pb-3 text-xs font-bold uppercase tracking-widest transition-all border-b-2 ${
+                isLogin ? 'text-white border-indigo-500' : 'text-zinc-600 border-transparent hover:text-zinc-400'
               }`}
             >
               Sign In
             </button>
             <button 
               onClick={() => setIsLogin(false)}
-              className={`flex-1 pb-3 text-sm font-bold tracking-widest uppercase transition-all border-b-2 ${
-                !isLogin ? 'text-ghost-cyan border-ghost-cyan' : 'text-slate-500 border-transparent hover:text-slate-300'
+              className={`flex-1 pb-3 text-xs font-bold uppercase tracking-widest transition-all border-b-2 ${
+                !isLogin ? 'text-white border-indigo-500' : 'text-zinc-600 border-transparent hover:text-zinc-400'
               }`}
             >
-              Register
+              Get Started
             </button>
           </div>
 
-          <form onSubmit={handleAuth} className="space-y-6">
+          <form onSubmit={handleEmailAuth} className="space-y-5">
+            {error && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-red-500/10 border border-red-500/20 p-3 rounded-xl text-[10px] font-bold text-red-400 uppercase tracking-widest"
+              >
+                {error}
+              </motion.div>
+            )}
             {!isLogin && (
               <div>
-                <label className="block text-[10px] font-mono text-slate-500 uppercase tracking-[0.2em] mb-2 pl-1">Unique Identifier</label>
+                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 pl-1">Full Name</label>
                 <div className="relative">
-                  <Fingerprint className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                  <Fingerprint className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600" size={16} />
                   <input 
                     type="text" 
-                    placeholder="E.g. Ghost_01"
-                    className="w-full glass bg-ghost-charcoal/50 py-4 pl-12 pr-4 rounded-xl text-white placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-ghost-cyan/50 transition-all"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="Alex Rivera"
+                    required
+                    className="w-full bg-white/[0.03] border border-white/5 py-3 pl-11 pr-4 rounded-xl text-white placeholder:text-zinc-700 focus:outline-none focus:border-white/10 transition-all text-sm"
                   />
                 </div>
               </div>
             )}
 
             <div>
-              <label className="block text-[10px] font-mono text-slate-500 uppercase tracking-[0.2em] mb-2 pl-1">Node Email</label>
+              <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 pl-1">Work Email</label>
               <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600" size={16} />
                 <input 
                   type="email" 
-                  placeholder="name@ghostlink.ai"
-                  className="w-full glass bg-ghost-charcoal/50 py-4 pl-12 pr-4 rounded-xl text-white placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-ghost-cyan/50 transition-all"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@company.com"
+                  required
+                  className="w-full bg-white/[0.03] border border-white/5 py-3 pl-11 pr-4 rounded-xl text-white placeholder:text-zinc-700 focus:outline-none focus:border-white/10 transition-all text-sm"
                 />
               </div>
             </div>
 
             <div>
               <div className="flex justify-between mb-2 pl-1">
-                <label className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.2em]">Security Key</label>
-                {isLogin && <a href="#" className="text-[10px] font-mono text-ghost-cyan hover:underline">Revoke Access?</a>}
+                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Password</label>
+                {isLogin && <a href="#" className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors uppercase tracking-widest">Forgot?</a>}
               </div>
               <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600" size={16} />
                 <input 
                   type="password" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
-                  className="w-full glass bg-ghost-charcoal/50 py-4 pl-12 pr-4 rounded-xl text-white placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-ghost-cyan/50 transition-all"
+                  required
+                  className="w-full bg-white/[0.03] border border-white/5 py-3 pl-11 pr-4 rounded-xl text-white placeholder:text-zinc-700 focus:outline-none focus:border-white/10 transition-all text-sm"
                 />
               </div>
             </div>
 
             <button 
               type="submit" 
-              className="w-full py-4 bg-white text-ghost-navy rounded-xl font-black text-sm uppercase tracking-widest hover:bg-slate-200 transition-all shadow-[0_0_30px_rgba(255,255,255,0.1)] flex items-center justify-center gap-2 group"
+              disabled={isLoading}
+              className="w-full py-3.5 bg-white text-black rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-zinc-200 disabled:opacity-50 transition-all flex items-center justify-center gap-2 group"
             >
-              {isLogin ? 'Establish Connection' : 'Initialize Node'}
-              <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+              {isLoading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
+              {!isLoading && <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />}
             </button>
           </form>
 
           <div className="mt-8 pt-8 border-t border-white/5">
-            <p className="text-center text-[10px] font-mono text-slate-600 uppercase tracking-widest mb-6">Or authenticate via spectral bridge</p>
-            <div className="flex gap-4">
-              <button className="flex-1 glass py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-white/5 transition-all text-slate-300">
-                <Github size={18} /> <span className="text-xs font-bold font-mono">GITHUB</span>
-              </button>
-              <button className="flex-1 glass py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-white/5 transition-all text-slate-300">
-                <Twitter size={18} /> <span className="text-xs font-bold font-mono">TWITTER</span>
+            <p className="text-center text-[10px] font-bold text-zinc-600 uppercase tracking-widest mb-6">Or continue with</p>
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={handleGoogleLogin}
+                className="w-full bg-white/[0.03] border border-white/5 py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-white/[0.06] transition-all text-zinc-400"
+              >
+                <Github size={16} /> <span className="text-[10px] font-bold uppercase tracking-widest">Google Integration</span>
               </button>
             </div>
           </div>
         </div>
 
-        <p className="text-center mt-12 text-[10px] font-mono text-slate-500 uppercase tracking-[0.4em] opacity-50">
-          GhostLink Protocol v4.2.0 • Zero Trust Active
+        <p className="text-center mt-10 text-[9px] font-bold text-zinc-700 uppercase tracking-[0.2em]">
+          Secure Infrastructure • SOC 2 Type II
         </p>
       </motion.div>
     </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { 
   Command, 
   Search, 
@@ -11,100 +11,104 @@ import {
   ChevronRight,
   Filter,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Activity,
+  Key,
+  Users,
+  Settings
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { aiService } from '../services/aiService';
 
-const CommandItem = ({ icon: Icon, title, shortcut, desc, color, onClick }: any) => (
+const CommandItem = React.memo(({ icon: Icon, title, shortcut, desc, active, onClick }: any) => (
   <motion.div 
-    whileHover={{ scale: 1.02 }}
+    whileHover={{ x: 4 }}
     whileTap={{ scale: 0.98 }}
-    className="glass p-4 rounded-2xl hover:bg-white/5 transition-all cursor-pointer flex items-center gap-4 group"
+    className="bg-[#0A0B0E] border border-white/5 p-4 rounded-xl hover:bg-white/[0.04] transition-all cursor-pointer flex items-center gap-4 group"
     onClick={onClick}
   >
-    <div className={`w-10 h-10 rounded-xl bg-${color}/10 text-${color} flex items-center justify-center group-hover:scale-110 transition-transform`}>
-      <Icon size={20} />
+    <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-transform ${active ? 'bg-indigo-500/10 text-indigo-400' : 'bg-white/[0.03] text-zinc-500'}`}>
+      <Icon size={18} />
     </div>
     <div className="flex-1 min-w-0">
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-bold text-white italic tracking-tight">{title}</h4>
-        <span className="text-[10px] font-mono text-slate-600 bg-white/5 px-1.5 py-0.5 rounded border border-white/5">{shortcut}</span>
+        <h4 className="text-sm font-semibold text-white tracking-tight">{title}</h4>
+        <span className="text-[10px] font-bold text-zinc-600 bg-white/5 px-1.5 py-0.5 rounded border border-white/5">{shortcut}</span>
       </div>
-      <p className="text-xs text-slate-500 mt-1">{desc}</p>
+      <p className="text-[11px] text-zinc-500 mt-0.5">{desc}</p>
     </div>
   </motion.div>
-);
+));
 
 export default function SemanticCommandCenter() {
-  const [command, setCommand] = useState('');
+  const [commandInput, setCommandInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [feedback, setFeedback] = useState<any>(null);
 
-  const handleCommand = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!command.trim()) return;
+  const handleCommand = useCallback(async (e?: React.FormEvent, overrideCommand?: string) => {
+    e?.preventDefault();
+    const finalCommand = (overrideCommand || commandInput).trim();
+    if (!finalCommand || isProcessing) return;
 
     setIsProcessing(true);
     setFeedback(null);
 
     try {
-      const response = await fetch('/api/commands', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command }),
+      const response = await aiService.executeCommand(finalCommand);
+      setFeedback({ 
+        action: response.action || 'DIRECTIVE_PROCESSED', 
+        success: true,
+        details: response.explanation || response.reason || 'Command synchronization complete.'
       });
-      const data = await response.json();
-      setFeedback(data);
-      setCommand('');
+      if (!overrideCommand) setCommandInput('');
     } catch (error) {
-      console.error(error);
-      setFeedback({ error: 'Command Center Link Interrupted' });
+      setFeedback({ error: error instanceof Error ? error.message : "Command processing failed. Semantic link unstable." });
     } finally {
       setIsProcessing(false);
     }
-  };
+  }, [commandInput, isProcessing]);
 
   const executeDirective = (directive: string) => {
-    setCommand(directive);
+    setCommandInput(directive);
+    handleCommand(undefined, directive);
   };
 
   return (
-    <div className="p-8 max-w-5xl mx-auto space-y-12">
+    <div className="p-8 max-w-4xl mx-auto space-y-12 h-full overflow-y-auto scrollbar-hidden">
       <motion.div 
-        initial={{ opacity: 0, y: -20 }}
+        initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="text-center space-y-4"
+        className="text-center space-y-3"
       >
-        <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mx-auto mb-6 border border-white/10 shadow-2xl">
-          <Terminal size={32} className="text-ghost-cyan" />
+        <div className="w-14 h-14 rounded-2xl bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center mx-auto mb-4">
+          <Terminal size={28} className="text-indigo-400" />
         </div>
-        <h1 className="text-4xl font-display font-black text-white italic tracking-tighter">Command Center</h1>
-        <p className="text-slate-400 max-w-xl mx-auto text-sm">Semantic control over every node and synthesis in the GhostLink network.</p>
+        <h1 className="text-3xl font-bold text-white tracking-tight">System Console</h1>
+        <p className="text-sm text-zinc-500 max-w-md mx-auto">Instant access to workspace settings, infrastructure management, and team tools.</p>
       </motion.div>
 
-      {/* Semantic Search Bar */}
+      {/* Command Search Bar */}
       <motion.form 
         onSubmit={handleCommand}
-        initial={{ opacity: 0, scale: 0.95 }}
+        initial={{ opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="relative group"
+        className="relative"
       >
-        <div className="absolute -inset-1 bg-gradient-to-r from-ghost-cyan/20 to-ghost-violet/20 rounded-3xl blur opacity-30 group-focus-within:opacity-100 transition duration-500" />
-        <div className="relative glass bg-ghost-charcoal/80 rounded-3xl p-2 shadow-2xl flex items-center gap-4 border-ghost-cyan/20">
-          <div className="w-12 h-12 rounded-2xl bg-ghost-cyan/10 flex items-center justify-center text-ghost-cyan shadow-[0_0_15px_rgba(0,242,255,0.1)]">
-            {isProcessing ? <Loader2 size={24} className="animate-spin text-ghost-cyan" /> : <Command size={24} />}
+        <div className="relative bg-[#0A0B0E] border border-white/10 rounded-2xl p-1.5 shadow-2xl flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400">
+            {isProcessing ? <Loader2 size={20} className="animate-spin" /> : <Command size={20} />}
           </div>
           <input 
-            value={command}
-            onChange={(e) => setCommand(e.target.value)}
+            value={commandInput}
+            onChange={(e) => setCommandInput(e.target.value)}
             disabled={isProcessing}
             autoFocus
-            placeholder="Search nodes, users, or execute spectral commands..."
-            className="flex-1 bg-transparent border-none text-lg text-white placeholder:text-slate-700 focus:ring-0 py-4"
+            placeholder="Type a command or search..."
+            className="flex-1 bg-transparent border-none text-base text-white placeholder:text-zinc-700 focus:ring-0 py-3"
           />
-          <div className="flex gap-2 pr-4">
-            <button type="submit" className="glass-pill flex items-center gap-2 hover:bg-white/10 transition-colors px-6 py-2">
-              EXECUTE
+          <div className="flex gap-2 pr-2">
+            <button type="submit" className="bg-white text-black text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded-lg hover:bg-zinc-200 transition-colors">
+              Run
             </button>
           </div>
         </div>
@@ -113,89 +117,85 @@ export default function SemanticCommandCenter() {
       <AnimatePresence>
         {feedback && (
           <motion.div 
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className={`glass p-6 rounded-3xl border-${feedback.error ? 'red-500/20' : 'ghost-cyan/20'} bg-${feedback.error ? 'red-500/5' : 'ghost-cyan/5'}`}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className={`p-4 rounded-xl border ${feedback.error ? 'border-red-500/20 bg-red-500/5' : 'border-indigo-500/20 bg-indigo-500/5'}`}
           >
-            <div className="flex items-center gap-4">
-              {feedback.error ? <AlertCircle className="text-red-500" /> : <Zap className="text-ghost-cyan" />}
+            <div className="flex items-center gap-3">
+              {feedback.error ? <AlertCircle className="text-red-500" size={18} /> : <Zap className="text-indigo-400" size={18} />}
               <div>
-                <h4 className="text-sm font-bold text-white italic">{feedback.error ? 'Execution Error' : 'Directive Acknowledged'}</h4>
-                <p className="text-xs text-slate-400 mt-1">{feedback.error || feedback.reason || `Successfully processed: ${feedback.action || 'SYNTHESIS_UPDATE'}`}</p>
+                <h4 className="text-xs font-bold text-white uppercase tracking-tight">{feedback.error ? 'Error' : 'Command Executed'}</h4>
+                <p className="text-[11px] text-zinc-500 mt-0.5">{feedback.error || `Successfully processed: ${feedback.action}`}</p>
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
         <motion.div
-          initial={{ opacity: 0, x: -20 }}
+          initial={{ opacity: 0, x: -10 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.1 }}
         >
-          <h3 className="text-[10px] font-mono text-slate-500 uppercase tracking-widest mb-6 px-1 flex items-center gap-2">
-            <Radio size={14} className="text-ghost-cyan" /> System Directives
+          <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-4 px-1 flex items-center gap-2">
+            <Terminal size={12} className="text-indigo-400" /> Core Commands
           </h3>
-          <div className="space-y-3">
+          <div className="space-y-2">
             <CommandItem 
-              icon={Cpu} 
-              title="Rescale Synthesis" 
-              shortcut="⌘ S" 
-              desc="Adjust compute allocation for active AI threads."
-              color="text-ghost-cyan"
-              onClick={() => executeDirective("Adjust compute allocation for sector 7")}
+              icon={Activity} 
+              title="Optimize Resources" 
+              shortcut="⌘ O" 
+              desc="Analyze and scale environment allocations."
+              active
+              onClick={() => executeDirective("Optimize resource allocation")}
             />
             <CommandItem 
-              icon={ShieldCheck} 
-              title="Rotate Spectral Keys" 
+              icon={Key} 
+              title="Rotate Auth Keys" 
               shortcut="⌘ K" 
-              desc="Invalidate current ephemeral keys and rebroadcast."
-              color="text-ghost-violet"
-              onClick={() => executeDirective("Rotate all spectral encryption keys")}
+              desc="Force refresh of all active session tokens."
+              onClick={() => executeDirective("Rotate authentication keys")}
             />
             <CommandItem 
-              icon={Globe} 
-              title="Network Topology" 
-              shortcut="⌘ N" 
-              desc="Visualize active bridges and node status."
-              color="text-ghost-cyan"
-              onClick={() => executeDirective("Analyze network topology for bottlenecks")}
+              icon={Users} 
+              title="Team Overview" 
+              shortcut="⌘ T" 
+              desc="Open the collaborative workspace map."
+              onClick={() => executeDirective("Show project activity")}
             />
           </div>
         </motion.div>
 
         <motion.div
-          initial={{ opacity: 0, x: 20 }}
+          initial={{ opacity: 0, x: 10 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.2 }}
         >
-           <h3 className="text-[10px] font-mono text-slate-500 uppercase tracking-widest mb-6 px-1 flex items-center gap-2">
-            <Zap size={14} className="text-yellow-400" /> Quick Actions
+           <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-4 px-1 flex items-center gap-2">
+            <Settings size={12} className="text-zinc-600" /> Platform Health
           </h3>
-          <div className="space-y-3">
-            <div className="glass p-6 rounded-3xl space-y-4">
+          <div className="space-y-4">
+            <div className="bg-[#0A0B0E] border border-white/5 p-6 rounded-2xl space-y-4">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-bold text-white italic">Node Connectivity</span>
-                <span className="text-[10px] font-mono text-ghost-cyan">98.4%</span>
+                <span className="text-xs font-semibold text-white">Service Availability</span>
+                <span className="text-[10px] font-bold text-emerald-500">99.9%</span>
               </div>
-              <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                <div className="h-full bg-ghost-cyan cyan-glow w-[98%]" />
+              <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-500 w-[99.9%]" />
               </div>
               <div className="flex gap-2">
-                <button className="flex-1 py-3 bg-white/5 rounded-xl text-xs font-bold font-mono tracking-widest text-slate-300 hover:text-white transition-all">STABILIZE</button>
-                <button className="flex-1 py-3 bg-white/5 rounded-xl text-xs font-bold font-mono tracking-widest text-slate-300 hover:text-white transition-all">BOOST</button>
+                <button className="flex-1 py-2.5 bg-white/[0.03] border border-white/5 rounded-lg text-[9px] font-bold tracking-widest text-zinc-400 hover:text-white transition-all uppercase">Diagnostics</button>
+                <button className="flex-1 py-2.5 bg-white/[0.03] border border-white/5 rounded-lg text-[9px] font-bold tracking-widest text-zinc-400 hover:text-white transition-all uppercase">Logs</button>
               </div>
             </div>
-            <div className="glass p-4 rounded-2xl flex items-center justify-between hover:bg-white/5 transition-all cursor-pointer group">
+            <div className="bg-[#0A0B0E] border border-white/5 p-4 rounded-xl flex items-center justify-between hover:bg-white/[0.04] transition-all cursor-pointer group">
               <div className="flex items-center gap-3">
-                 <div className="w-8 h-8 rounded-lg bg-green-500/10 text-green-500 flex items-center justify-center">
+                 <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
                     <Radio size={16} />
                  </div>
-                 <span className="text-sm font-medium text-slate-300">Vanguard Broadcast active</span>
+                 <span className="text-xs font-medium text-zinc-400 group-hover:text-zinc-300">Live deployment synchronizing</span>
               </div>
-              <ChevronRight size={14} className="text-slate-700 group-hover:text-slate-400" />
+              <ChevronRight size={14} className="text-zinc-700 group-hover:text-zinc-500" />
             </div>
           </div>
         </motion.div>

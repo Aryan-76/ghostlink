@@ -1,39 +1,82 @@
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Shell } from './components/layout/Shell.tsx';
-import LandingPage from './pages/LandingPage.tsx';
-import AuthPage from './pages/AuthPage.tsx';
-import MainWorkspace from './pages/MainWorkspace.tsx';
-import RealtimeChat from './pages/RealtimeChat.tsx';
-import AICollabWorkspace from './pages/AICollabWorkspace.tsx';
-import CommandCenter from './pages/CommandCenter.tsx';
-import IntelligenceSearch from './pages/IntelligenceSearch.tsx';
-import SpatialThreads from './pages/SpatialThreads.tsx';
-import UserProfile from './pages/UserProfile.tsx';
-import MobileWorkspace from './pages/MobileWorkspace.tsx';
+import { WorkspaceProvider } from './hooks/useWorkspace.tsx';
+import { Loader2 } from 'lucide-react';
+import { ErrorBoundary } from './components/common/ErrorBoundary.tsx';
+
+// Lazy load pages for better bundle performance
+const LandingPage = lazy(() => import('./pages/LandingPage.tsx'));
+const AuthPage = lazy(() => import('./pages/AuthPage.tsx'));
+const MainWorkspace = lazy(() => import('./pages/MainWorkspace.tsx'));
+const RealtimeChat = lazy(() => import('./pages/RealtimeChat.tsx'));
+const AICollabWorkspace = lazy(() => import('./pages/AICollabWorkspace.tsx'));
+const CommandCenter = lazy(() => import('./pages/CommandCenter.tsx'));
+const IntelligenceSearch = lazy(() => import('./pages/IntelligenceSearch.tsx'));
+const SpatialThreads = lazy(() => import('./pages/SpatialThreads.tsx'));
+const UserProfile = lazy(() => import('./pages/UserProfile.tsx'));
+const MobileWorkspace = lazy(() => import('./pages/MobileWorkspace.tsx'));
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      gcTime: 1000 * 60 * 30, // 30 minutes
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+const PageLoader = () => (
+  <div className="h-screen w-full flex items-center justify-center bg-[#020306]">
+    <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+  </div>
+);
+
+import { useAuthStore } from './store/authStore.ts';
+
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, isLoading } = useAuthStore();
+  
+  if (isLoading) return <PageLoader />;
+  if (!user) return <Navigate to="/auth" replace />;
+  
+  return <>{children}</>;
+};
 
 export default function App() {
   return (
-    <Router>
-      <Routes>
-        {/* Public Routes */}
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/auth" element={<AuthPage />} />
-        
-        {/* App Shell Routes */}
-        <Route path="/workspace" element={<Shell><MainWorkspace /></Shell>} />
-        <Route path="/chat" element={<Shell><RealtimeChat /></Shell>} />
-        <Route path="/ai-collab" element={<Shell><AICollabWorkspace /></Shell>} />
-        <Route path="/command" element={<Shell><CommandCenter /></Shell>} />
-        <Route path="/search" element={<Shell><IntelligenceSearch /></Shell>} />
-        <Route path="/threads" element={<Shell><SpatialThreads /></Shell>} />
-        <Route path="/profile" element={<Shell><UserProfile /></Shell>} />
-        
-        {/* Specialized Views */}
-        <Route path="/mobile" element={<MobileWorkspace />} />
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <WorkspaceProvider>
+          <Router>
+            <Suspense fallback={<PageLoader />}>
+              <Routes>
+                {/* Public Routes */}
+                <Route path="/" element={<LandingPage />} />
+                <Route path="/auth" element={<AuthPage />} />
+                
+                {/* App Shell Routes (Protected) */}
+                <Route path="/workspace" element={<ProtectedRoute><Shell><MainWorkspace /></Shell></ProtectedRoute>} />
+                <Route path="/chat" element={<ProtectedRoute><Shell><RealtimeChat /></Shell></ProtectedRoute>} />
+                <Route path="/ai-collab" element={<ProtectedRoute><Shell><AICollabWorkspace /></Shell></ProtectedRoute>} />
+                <Route path="/command" element={<ProtectedRoute><Shell><CommandCenter /></Shell></ProtectedRoute>} />
+                <Route path="/search" element={<ProtectedRoute><Shell><IntelligenceSearch /></Shell></ProtectedRoute>} />
+                <Route path="/threads" element={<ProtectedRoute><Shell><SpatialThreads /></Shell></ProtectedRoute>} />
+                <Route path="/profile" element={<ProtectedRoute><Shell><UserProfile /></Shell></ProtectedRoute>} />
+                
+                {/* Specialized Views */}
+                <Route path="/mobile" element={<ProtectedRoute><MobileWorkspace /></ProtectedRoute>} />
 
-        {/* Fallback */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Router>
+                {/* Fallback */}
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </Suspense>
+          </Router>
+        </WorkspaceProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
