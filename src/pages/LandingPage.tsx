@@ -87,9 +87,9 @@ const Hero = () => (
         <Link to="/auth" className="w-full sm:w-auto px-8 py-4 bg-indigo-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-500 transition-all shadow-xl group">
           Start building <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
         </Link>
-        <a href="#" className="w-full sm:w-auto px-8 py-4 bg-white/[0.03] border border-white/10 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-white/[0.06] transition-all">
-          Book a demo <Zap size={18} className="text-yellow-400" />
-        </a>
+        <Link to="/auth" className="w-full sm:w-auto px-8 py-4 bg-white/[0.03] border border-white/10 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-white/[0.06] transition-all">
+          Product Tour <Zap size={18} className="text-yellow-400" />
+        </Link>
       </motion.div>
 
       {/* Hero Image / Mockup */}
@@ -171,12 +171,15 @@ export default function LandingPage() {
       <Hero />
       <Features />
       
-      {/* Social Proof */}
-      <section className="py-24 border-b border-white/5 flex flex-wrap justify-center items-center gap-16 opacity-30 invert">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/9/96/Stripe_logo%2C_revised_2016.svg" alt="Stripe" className="h-6" />
-        <img src="https://upload.wikimedia.org/wikipedia/commons/0/08/Netflix_2015_logo.svg" alt="Netflix" className="h-6" />
-        <img src="https://upload.wikimedia.org/wikipedia/commons/2/2f/Google_2015_logo.svg" alt="Google" className="h-6" />
-        <img src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Logo_of_Dropbox.svg" alt="Dropbox" className="h-6" />
+      {/* Trust Section */}
+      <section className="py-24 border-b border-white/5 text-center">
+        <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-[0.3em] mb-12">Trusted by innovative teams worldwide</p>
+        <div className="flex flex-wrap justify-center items-center gap-16 px-8 opacity-40">
+           <div className="text-xl font-bold text-white tracking-tighter">STRIPE</div>
+           <div className="text-xl font-bold text-white tracking-tighter">VERCEL</div>
+           <div className="text-xl font-bold text-white tracking-tighter">LINEAR</div>
+           <div className="text-xl font-bold text-white tracking-tighter">RAILWAY</div>
+        </div>
       </section>
 
       <footer className="py-24 px-8 bg-[#040507]">
@@ -201,25 +204,25 @@ export default function LandingPage() {
             <div>
               <h4 className="text-[10px] font-bold text-white uppercase tracking-widest mb-6">Product</h4>
               <ul className="space-y-4 text-xs font-bold text-zinc-600 uppercase tracking-wider">
-                <li><a href="#" className="hover:text-indigo-400 transition-colors">Workspace</a></li>
-                <li><a href="#" className="hover:text-indigo-400 transition-colors">Dashboard</a></li>
-                <li><a href="#" className="hover:text-indigo-400 transition-colors">Security</a></li>
+                <li><Link to="/auth" className="hover:text-indigo-400 transition-colors">Workspace</Link></li>
+                <li><span className="text-zinc-800 cursor-not-allowed">Integrations (Soon)</span></li>
+                <li><span className="text-zinc-800 cursor-not-allowed">API</span></li>
               </ul>
             </div>
             <div>
               <h4 className="text-[10px] font-bold text-white uppercase tracking-widest mb-6">Company</h4>
               <ul className="space-y-4 text-xs font-bold text-zinc-600 uppercase tracking-wider">
-                <li><a href="#" className="hover:text-indigo-400 transition-colors">About</a></li>
-                <li><a href="#" className="hover:text-indigo-400 transition-colors">Careers</a></li>
-                <li><a href="#" className="hover:text-indigo-400 transition-colors">Blog</a></li>
+                <li><span className="text-zinc-800 cursor-not-allowed">About</span></li>
+                <li><span className="text-zinc-800 cursor-not-allowed">Careers</span></li>
+                <li><span className="text-zinc-800 cursor-not-allowed">Blog</span></li>
               </ul>
             </div>
             <div>
-              <h4 className="text-[10px] font-bold text-white uppercase tracking-widest mb-6">Support</h4>
+              <h4 className="text-[10px] font-bold text-white uppercase tracking-widest mb-6">Legal</h4>
               <ul className="space-y-4 text-xs font-bold text-zinc-600 uppercase tracking-wider">
-                <li><a href="#" className="hover:text-indigo-400 transition-colors">Docs</a></li>
-                <li><a href="#" className="hover:text-indigo-400 transition-colors">Status</a></li>
-                <li><a href="#" className="hover:text-indigo-400 transition-colors">Terms</a></li>
+                <li><span className="text-zinc-800 cursor-not-allowed">Privacy</span></li>
+                <li><span className="text-zinc-800 cursor-not-allowed">Terms</span></li>
+                <li><span className="text-zinc-800 cursor-not-allowed">Security</span></li>
               </ul>
             </div>
           </div>

@@ -9,7 +9,8 @@ import {
   Hash,
   AtSign,
   Sparkles,
-  Loader2
+  Loader2,
+  FileText
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -45,7 +46,7 @@ const Message = React.memo(({ user, text, time, isAI }: MessageType) => (
         {isAI && <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400 uppercase tracking-widest">Assistant</span>}
         <span className="text-[10px] font-medium text-zinc-600 ml-auto">{time}</span>
       </div>
-      <p className="text-sm text-zinc-400 leading-relaxed whitespace-pre-wrap">{text}</p>
+      <div className="text-sm text-zinc-400 leading-relaxed whitespace-pre-wrap">{text}</div>
     </div>
   </motion.div>
 ));
@@ -55,6 +56,7 @@ export default function RealtimeChat() {
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [isSummarizing, setIsSummarizing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = useCallback(() => {
@@ -93,6 +95,28 @@ export default function RealtimeChat() {
 
     return () => unsubscribe();
   }, [user]);
+
+  const handleSummarize = async () => {
+    if (messages.length < 2 || isSummarizing) return;
+    
+    setIsSummarizing(true);
+    try {
+      const chatContext = messages.map(m => `${m.user}: ${m.text}`).join('\n');
+      const response = await aiService.chat(`Please summarize the following conversation briefly and highlight key points or action items:\n\n${chatContext}`);
+      
+      await addDoc(collection(db, 'chat', 'messages', 'entries'), {
+        text: `**Conversation Summary**\n\n${response.text}`,
+        userId: 'ghost-assistant',
+        userDisplayName: 'Ghost Assistant',
+        isAI: true,
+        timestamp: serverTimestamp()
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'chat/messages/entries');
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -202,7 +226,7 @@ export default function RealtimeChat() {
             <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">AI Context</span>
           </div>
           <p className="text-[10px] text-zinc-500 leading-relaxed italic">
-            "The team is discussing regional deployment. I've gathered the latest latency reports for review."
+            "I'm monitoring the #infrastructure channel for deployment updates and latency reports."
           </p>
         </div>
       </div>
@@ -219,13 +243,21 @@ export default function RealtimeChat() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <button 
+              onClick={handleSummarize}
+              disabled={isSummarizing || messages.length === 0}
+              className="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-indigo-500/20 transition-all disabled:opacity-50"
+            >
+              {isSummarizing ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+              {isSummarizing ? 'Summarizing...' : 'Summarize'}
+            </button>
+            <div className="h-6 w-px bg-white/5" />
             <div className="flex -space-x-1.5">
               {[1, 2, 3].map(i => (
                 <div key={i} className="w-7 h-7 rounded-full border border-[#020306] bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-400">
                   {i}
                 </div>
               ))}
-              <div className="w-7 h-7 rounded-full border border-[#020306] bg-indigo-600 text-white flex items-center justify-center text-[10px] font-bold">+</div>
             </div>
             <MoreVertical size={18} className="text-zinc-600 cursor-pointer hover:text-white" />
           </div>
@@ -235,17 +267,17 @@ export default function RealtimeChat() {
         <div className="flex-1 overflow-y-auto p-8 space-y-2 scrollbar-hidden">
           <AnimatePresence>
             {messages.map((msg, i) => (
-              <Message key={i} {...msg} />
+              <Message key={msg.id || i} {...msg} />
             ))}
           </AnimatePresence>
-          {isTyping && (
+          {(isTyping || isSummarizing) && (
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               className="flex items-center gap-2 p-4 text-indigo-400 text-[10px] font-bold uppercase tracking-widest"
             >
               <Loader2 size={12} className="animate-spin" />
-              <span>Assistant is typing...</span>
+              <span>{isSummarizing ? 'Assistant is summarizing...' : 'Assistant is typing...'}</span>
             </motion.div>
           )}
           <div ref={messagesEndRef} />

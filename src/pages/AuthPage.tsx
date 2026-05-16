@@ -50,9 +50,32 @@ export default function AuthPage() {
         });
       }
       navigate('/workspace');
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setError(err instanceof Error ? err.message : "Authentication failed");
+      let message = "Authentication failed. Secure link unstable.";
+      
+      switch (err.code) {
+        case 'auth/invalid-credential':
+          message = "Invalid credentials or API configuration. Please verify your login details and Firebase API Key.";
+          break;
+        case 'auth/user-not-found':
+          message = "Identity not found in regional registry.";
+          break;
+        case 'auth/wrong-password':
+          message = "Encryption key mismatch. Access denied.";
+          break;
+        case 'auth/email-already-in-use':
+          message = "Identity collision. Email already registered.";
+          break;
+        case 'auth/operation-not-allowed':
+          message = "Authentication provider disabled in cloud manifest.";
+          break;
+        case 'auth/weak-password':
+          message = "Security risk. Password length insufficient.";
+          break;
+      }
+      
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -84,8 +107,21 @@ export default function AuthPage() {
       }
 
       navigate('/workspace');
-    } catch (error) {
-      console.error(error);
+    } catch (err: any) {
+      console.error(err);
+      if (err.code !== 'auth/popup-closed-by-user') {
+        const currentDomain = window.location.hostname;
+        console.error(`[Auth Diagnostic] Authentication failed from domain: ${currentDomain}`);
+        
+        let message = "External authentication link failed.";
+        if (err.code === 'auth/unauthorized-domain') {
+          message = `Unauthorized Domain. You MUST add "${currentDomain}" to Authorized Domains in Firebase Console > Auth > Settings.`;
+        } else if (err.code === 'auth/invalid-credential') {
+          message = "Invalid Credentials. Check if your API Key in firebase-applet-config.json is correct for this project.";
+        }
+        
+        setError(message);
+      }
     } finally {
       setIsLoading(false);
     }

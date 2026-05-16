@@ -107,8 +107,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   const stats = useMemo<WorkspaceStats>(() => ({
     activeProjects: projects.length,
-    teamCapacity: '88%',
-    openIssues: 24,
+    teamCapacity: '88%', // Keep as mock for now or remove from types
+    openIssues: 0,
   }), [projects.length]);
 
   const isLoading = isAuthLoading || isProjectsLoading || isActivitiesLoading;

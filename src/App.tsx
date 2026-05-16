@@ -13,7 +13,6 @@ const MainWorkspace = lazy(() => import('./pages/MainWorkspace.tsx'));
 const RealtimeChat = lazy(() => import('./pages/RealtimeChat.tsx'));
 const AICollabWorkspace = lazy(() => import('./pages/AICollabWorkspace.tsx'));
 const CommandCenter = lazy(() => import('./pages/CommandCenter.tsx'));
-const IntelligenceSearch = lazy(() => import('./pages/IntelligenceSearch.tsx'));
 const SpatialThreads = lazy(() => import('./pages/SpatialThreads.tsx'));
 const UserProfile = lazy(() => import('./pages/UserProfile.tsx'));
 const MobileWorkspace = lazy(() => import('./pages/MobileWorkspace.tsx'));
@@ -63,7 +62,6 @@ export default function App() {
                 <Route path="/chat" element={<ProtectedRoute><Shell><RealtimeChat /></Shell></ProtectedRoute>} />
                 <Route path="/ai-collab" element={<ProtectedRoute><Shell><AICollabWorkspace /></Shell></ProtectedRoute>} />
                 <Route path="/command" element={<ProtectedRoute><Shell><CommandCenter /></Shell></ProtectedRoute>} />
-                <Route path="/search" element={<ProtectedRoute><Shell><IntelligenceSearch /></Shell></ProtectedRoute>} />
                 <Route path="/threads" element={<ProtectedRoute><Shell><SpatialThreads /></Shell></ProtectedRoute>} />
                 <Route path="/profile" element={<ProtectedRoute><Shell><UserProfile /></Shell></ProtectedRoute>} />
                 

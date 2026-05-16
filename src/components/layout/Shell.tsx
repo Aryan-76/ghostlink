@@ -56,10 +56,9 @@ export const Shell = React.memo(({ children }: { children: React.ReactNode }) =>
 
   const menuItems = [
     { to: '/workspace', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
-    { to: '/chat', icon: <MessageSquare size={18} />, label: 'Team Chat' },
-    { to: '/ai-collab', icon: <BrainCircuit size={18} />, label: 'Shared Editor' },
-    { to: '/command', icon: <Command size={18} />, label: 'Console' },
-    { to: '/search', icon: <Search size={18} />, label: 'Intelligence' },
+    { to: '/chat', icon: <MessageSquare size={18} />, label: 'Messaging' },
+    { to: '/ai-collab', icon: <BrainCircuit size={18} />, label: 'Documents' },
+    { to: '/command', icon: <Command size={18} />, label: 'Terminal' },
     { to: '/threads', icon: <Hash size={18} />, label: 'Activity' },
     { to: '/profile', icon: <User size={18} />, label: 'Settings' },
   ];
@@ -77,13 +76,13 @@ export const Shell = React.memo(({ children }: { children: React.ReactNode }) =>
       <aside className="w-[240px] bg-[#0A0B0E] border-r border-white/5 flex flex-col flex-shrink-0 z-20" aria-label="Main Sidebar">
         <div className="p-6">
           <div className="flex items-center gap-3 mb-10">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-cyan-500 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center">
               <Network size={18} className="text-white" />
             </div>
             <span className="font-display font-semibold text-lg tracking-tight text-white">GhostLink</span>
           </div>
 
-          <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-bold mb-4 ml-2">Product</div>
+          <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-bold mb-4 ml-2">Platform</div>
           <nav className="space-y-1" aria-label="Main Navigation">
             {menuItems.map((item) => (
               <SidebarItem 
@@ -104,7 +103,7 @@ export const Shell = React.memo(({ children }: { children: React.ReactNode }) =>
             </div>
             <div className="overflow-hidden">
               <div className="text-xs font-semibold text-white truncate">{user?.displayName || user?.email || 'User'}</div>
-              <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Workspace Member</div>
+              <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Early Access Plan</div>
             </div>
           </Link>
         </div>
@@ -122,15 +121,15 @@ export const Shell = React.memo(({ children }: { children: React.ReactNode }) =>
           </div>
 
           <div className="flex items-center gap-6">
-            <div className="relative group">
+            <div className="relative group focus-within:ring-2 focus-within:ring-indigo-500/20 rounded-md">
               <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
                 <Search size={12} className="text-zinc-500" />
               </div>
               <input 
                 type="text" 
-                placeholder="Universal Search..." 
+                placeholder="Search..." 
                 aria-label="Universal Search"
-                className="bg-white/5 border border-white/10 rounded-md pl-9 pr-12 py-1.5 text-xs focus:outline-none focus:border-white/20 w-64 text-zinc-300 transition-all"
+                className="bg-white/5 border border-white/10 rounded-md pl-9 pr-12 py-1.5 text-xs focus:outline-none focus:border-white/20 w-64 text-zinc-300 transition-all font-medium"
               />
               <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none" aria-hidden="true">
                 <span className="text-zinc-600 text-[10px] font-mono border border-zinc-800 px-1 rounded">⌘K</span>
@@ -138,9 +137,8 @@ export const Shell = React.memo(({ children }: { children: React.ReactNode }) =>
             </div>
 
             <div className="flex -space-x-2" aria-label="Collaborators Online">
-              <div className="w-7 h-7 rounded-full border-2 border-[#020306] bg-violet-500 flex items-center justify-center text-[10px] font-bold text-white z-20">AR</div>
-              <div className="w-7 h-7 rounded-full border-2 border-[#020306] bg-cyan-500 flex items-center justify-center text-[10px] font-bold text-white z-10">JD</div>
-              <div className="w-7 h-7 rounded-full border-2 border-[#020306] bg-zinc-800 flex items-center justify-center text-[10px] text-zinc-400 z-0">+4</div>
+              <div title="Collaborator Online" className="w-7 h-7 rounded-full border-2 border-[#020306] bg-violet-500 flex items-center justify-center text-[10px] font-bold text-white z-20">AR</div>
+              <div title="Collaborator Online" className="w-7 h-7 rounded-full border-2 border-[#020306] bg-cyan-500 flex items-center justify-center text-[10px] font-bold text-white z-10">JD</div>
             </div>
 
             <button 
@@ -170,14 +168,14 @@ export const Shell = React.memo(({ children }: { children: React.ReactNode }) =>
         <footer className="h-10 border-t border-white/5 bg-[#020306] flex items-center justify-between px-8" role="contentinfo">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true"></div>
-              <span className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider">Sync Active</span>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden="true"></div>
+              <span className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider">Cloud Sync Connected</span>
             </div>
             <div className="h-3 w-px bg-zinc-800" aria-hidden="true"></div>
-            <span className="text-[10px] text-zinc-600 font-mono tracking-tight uppercase">Build 0.9.x-PROD</span>
+            <span className="text-[10px] text-zinc-600 font-mono tracking-tight uppercase">v1.0.0-BETA</span>
           </div>
           <div className="flex items-center gap-6">
-            <span className="text-[10px] text-zinc-600 font-mono uppercase tracking-tight">System Optimized</span>
+            <span className="text-[10px] text-zinc-600 font-mono uppercase tracking-tight">Latency: 24ms</span>
             <span className="text-[10px] text-zinc-600 font-mono tracking-wider bg-white/5 px-2 py-0.5 rounded uppercase">Encrypted</span>
           </div>
         </footer>

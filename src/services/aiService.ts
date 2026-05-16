@@ -63,7 +63,7 @@ export const aiService = {
   },
 
   async executeCommand(command: string): Promise<any> {
-    const response = await fetchWithTimeout('/api/command', {
+    const response = await fetchWithTimeout('/api/commands', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ command }),

@@ -15,6 +15,22 @@ const firebaseConfig = {
 
 const databaseId = import.meta.env.VITE_FIREBASE_DATABASE_ID || aiStudioConfig.firestoreDatabaseId;
 
+// Diagnostic Check
+if (!firebaseConfig.apiKey) {
+  if (import.meta.env.PROD) {
+    console.error("FIREBASE CRITICAL ERROR: VITE_FIREBASE_API_KEY is missing from environment variables.");
+  } else {
+    console.warn("FIREBASE WARNING: Using fallback local configuration since environment variables are not defined.");
+  }
+} else {
+  console.log(`[Firebase Diagnostic] Initializing with Project ID: ${firebaseConfig.projectId}`);
+  if (import.meta.env.VITE_FIREBASE_API_KEY) {
+    console.log("[Firebase Diagnostic] Using environment variables for configuration.");
+  } else {
+    console.log("[Firebase Diagnostic] Using local firebase-applet-config.json for configuration.");
+  }
+}
+
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, databaseId);
 export const auth = getAuth();
@@ -22,10 +38,18 @@ export const auth = getAuth();
 // Validate connection
 async function testConnection() {
   try {
+    console.log("[Firebase Diagnostic] Testing Firestore connection...");
     await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if(error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration.");
+    console.log("[Firebase Diagnostic] Firestore connection probe completed.");
+  } catch (error: any) {
+    const message = error?.message || "";
+    if(message.includes('the client is offline')) {
+      console.error("FIREBASE OFFLINE: The client cannot reach the internet or Firebase servers.");
+    } else if (message.includes('permission') || message.includes('insufficient')) {
+      console.log("[Firebase Diagnostic] Connection reachable, but permission was denied (expected).");
+    } else {
+      console.error(`[Firebase Diagnostic] Connection Probe failed with error: ${error.code || 'unknown'}. Message: ${message}`);
+      console.warn("ACTION REQUIRED: Ensure Firestore is enabled in your Firebase Console for project 'record-b02ff'.");
     }
   }
 }

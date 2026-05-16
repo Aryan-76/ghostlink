@@ -123,17 +123,17 @@ export default function MainWorkspace() {
         className="flex flex-col md:flex-row md:items-center justify-between gap-6"
       >
         <div>
-          <h2 className="text-[10px] font-bold text-zinc-600 uppercase tracking-[0.3em] mb-1">Global Intelligence</h2>
+          <h2 className="text-[10px] font-bold text-zinc-600 uppercase tracking-[0.3em] mb-1">Collaboration Hub</h2>
           <h1 className="text-3xl font-bold text-white tracking-tight">
-            Dashboard
+            Workspace
           </h1>
         </div>
         <div className="flex gap-3">
           <button className="bg-[#101116] border border-white/5 px-4 py-2 rounded-lg text-[10px] font-bold text-zinc-500 hover:text-white hover:border-white/10 transition-all flex items-center gap-2 uppercase tracking-widest">
-            <Clock size={14} /> System Logs
+            <Clock size={14} /> Recent Actions
           </button>
           <button className="bg-white hover:bg-zinc-200 text-black px-4 py-2 rounded-lg text-[10px] font-bold transition-all flex items-center gap-2 uppercase tracking-widest">
-            <Plus size={14} /> New Deployment
+            <Plus size={14} /> Create Project
           </button>
         </div>
       </motion.div>
@@ -143,8 +143,8 @@ export default function MainWorkspace() {
         <div className="md:col-span-8 flex flex-col gap-10">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
             <StatCard label="Active Projects" value={stats.activeProjects} icon={BarChart3} delay={0.1} />
-            <StatCard label="Network Load" value={stats.teamCapacity} icon={Users} delay={0.2} />
-            <StatCard label="Open Alerts" value={stats.openIssues} trend={stats.issueTrend} icon={CheckCircle2} delay={0.3} />
+            <StatCard label="Total Activities" value={activities.length} icon={Activity} delay={0.2} />
+            <StatCard label="Team Members" value={projects.reduce((acc, p) => acc + (p.members?.length || 0), 0)} icon={Users} delay={0.3} />
           </div>
 
           <div className="space-y-6">
@@ -173,7 +173,7 @@ export default function MainWorkspace() {
         {/* Right Column: Activity Feed */}
         <div className="md:col-span-4 space-y-6 bg-[#101116] border border-white/5 rounded-2xl p-6">
           <div className="flex items-center justify-between px-1">
-            <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Network Activity</h3>
+            <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Recent Activity</h3>
             <Activity size={14} className="text-zinc-700" />
           </div>
 
@@ -183,13 +183,15 @@ export default function MainWorkspace() {
                 <ActivityItem key={activity.id} {...activity} />
               ))
             ) : (
-              <p className="text-[10px] text-zinc-600 text-center py-8 italic uppercase tracking-widest">No recent traffic</p>
+              <p className="text-[10px] text-zinc-600 text-center py-8 italic uppercase tracking-widest">No recent activity</p>
             )}
           </div>
 
-          <button className="w-full py-3 bg-white/[0.03] border border-white/5 rounded-xl text-[9px] font-bold text-zinc-600 hover:text-white hover:bg-white/[0.05] transition-all flex items-center justify-center gap-2 uppercase tracking-widest">
-            ANALYZE FULL STREAM <ChevronRight size={12} />
-          </button>
+          {activities.length > 10 && (
+            <button className="w-full py-3 bg-white/[0.03] border border-white/5 rounded-xl text-[9px] font-bold text-zinc-600 hover:text-white hover:bg-white/[0.05] transition-all flex items-center justify-center gap-2 uppercase tracking-widest">
+              VIEW ALL ACTIVITY <ChevronRight size={12} />
+            </button>
+          )}
         </div>
       </div>
     </div>
