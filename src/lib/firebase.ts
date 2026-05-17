@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import aiStudioConfig from '../../firebase-applet-config.json';
 
 // Production first: use env vars, fallback to AI Studio local config
@@ -18,38 +19,31 @@ const databaseId = import.meta.env.VITE_FIREBASE_DATABASE_ID || aiStudioConfig.f
 // Diagnostic Check
 if (!firebaseConfig.apiKey) {
   if (import.meta.env.PROD) {
-    console.error("FIREBASE CRITICAL ERROR: VITE_FIREBASE_API_KEY is missing from environment variables.");
+    console.error("Firebase Configuration Error: API Key is missing.");
   } else {
-    console.warn("FIREBASE WARNING: Using fallback local configuration since environment variables are not defined.");
+    console.warn("Firebase: Using local configuration fallback.");
   }
 } else {
-  console.log(`[Firebase Diagnostic] Initializing with Project ID: ${firebaseConfig.projectId}`);
-  if (import.meta.env.VITE_FIREBASE_API_KEY) {
-    console.log("[Firebase Diagnostic] Using environment variables for configuration.");
-  } else {
-    console.log("[Firebase Diagnostic] Using local firebase-applet-config.json for configuration.");
-  }
+  console.log(`[Firebase] Initializing project: ${firebaseConfig.projectId}`);
 }
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, databaseId);
 export const auth = getAuth();
+export const storage = getStorage(app);
 
 // Validate connection
 async function testConnection() {
   try {
-    console.log("[Firebase Diagnostic] Testing Firestore connection...");
     await getDocFromServer(doc(db, 'test', 'connection'));
-    console.log("[Firebase Diagnostic] Firestore connection probe completed.");
   } catch (error: any) {
     const message = error?.message || "";
     if(message.includes('the client is offline')) {
-      console.error("FIREBASE OFFLINE: The client cannot reach the internet or Firebase servers.");
+      console.error("Firebase: Storage unreachable. Check network connection.");
     } else if (message.includes('permission') || message.includes('insufficient')) {
-      console.log("[Firebase Diagnostic] Connection reachable, but permission was denied (expected).");
+      // Permission probe denied as expected depending on rules
     } else {
-      console.error(`[Firebase Diagnostic] Connection Probe failed with error: ${error.code || 'unknown'}. Message: ${message}`);
-      console.warn("ACTION REQUIRED: Ensure Firestore is enabled in your Firebase Console for project 'record-b02ff'.");
+      console.error(`Firebase connection error: ${error.code || 'unknown'}`);
     }
   }
 }
@@ -81,9 +75,16 @@ export interface FirestoreErrorInfo {
   }
 }
 
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+export function handleFirestoreError(error: any, operationType: OperationType, path: string | null) {
+  const message = error?.message || String(error);
+  
+  // Suppress terminal spam for expected "offline" states
+  if (message.includes('the client is offline') || message.includes('offline')) {
+    return;
+  }
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: message,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,

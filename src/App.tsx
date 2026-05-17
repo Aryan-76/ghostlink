@@ -10,12 +10,10 @@ import { ErrorBoundary } from './components/common/ErrorBoundary.tsx';
 const LandingPage = lazy(() => import('./pages/LandingPage.tsx'));
 const AuthPage = lazy(() => import('./pages/AuthPage.tsx'));
 const MainWorkspace = lazy(() => import('./pages/MainWorkspace.tsx'));
-const RealtimeChat = lazy(() => import('./pages/RealtimeChat.tsx'));
-const AICollabWorkspace = lazy(() => import('./pages/AICollabWorkspace.tsx'));
-const CommandCenter = lazy(() => import('./pages/CommandCenter.tsx'));
-const SpatialThreads = lazy(() => import('./pages/SpatialThreads.tsx'));
+const ProjectDetail = lazy(() => import('./pages/ProjectDetail.tsx'));
 const UserProfile = lazy(() => import('./pages/UserProfile.tsx'));
-const MobileWorkspace = lazy(() => import('./pages/MobileWorkspace.tsx'));
+const DirectMessaging = lazy(() => import('./pages/DirectMessaging.tsx'));
+const GlobalCommunity = lazy(() => import('./pages/GlobalCommunity.tsx'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -58,18 +56,14 @@ export default function App() {
                 <Route path="/auth" element={<AuthPage />} />
                 
                 {/* App Shell Routes (Protected) */}
-                <Route path="/workspace" element={<ProtectedRoute><Shell><MainWorkspace /></Shell></ProtectedRoute>} />
-                <Route path="/chat" element={<ProtectedRoute><Shell><RealtimeChat /></Shell></ProtectedRoute>} />
-                <Route path="/ai-collab" element={<ProtectedRoute><Shell><AICollabWorkspace /></Shell></ProtectedRoute>} />
-                <Route path="/command" element={<ProtectedRoute><Shell><CommandCenter /></Shell></ProtectedRoute>} />
-                <Route path="/threads" element={<ProtectedRoute><Shell><SpatialThreads /></Shell></ProtectedRoute>} />
-                <Route path="/profile" element={<ProtectedRoute><Shell><UserProfile /></Shell></ProtectedRoute>} />
+                <Route path="/dashboard" element={<ProtectedRoute><Shell><MainWorkspace /></Shell></ProtectedRoute>} />
+                <Route path="/messages" element={<ProtectedRoute><Shell><DirectMessaging /></Shell></ProtectedRoute>} />
+                <Route path="/community" element={<ProtectedRoute><Shell><GlobalCommunity /></Shell></ProtectedRoute>} />
+                <Route path="/project/:projectId" element={<ProtectedRoute><Shell><ProjectDetail /></Shell></ProtectedRoute>} />
+                <Route path="/settings" element={<ProtectedRoute><Shell><UserProfile /></Shell></ProtectedRoute>} />
                 
-                {/* Specialized Views */}
-                <Route path="/mobile" element={<ProtectedRoute><MobileWorkspace /></ProtectedRoute>} />
-
                 {/* Fallback */}
-                <Route path="*" element={<Navigate to="/" replace />} />
+                <Route path="*" element={<Navigate to="/dashboard" replace />} />
               </Routes>
             </Suspense>
           </Router>

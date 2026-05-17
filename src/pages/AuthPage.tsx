@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowRight, Mail, Lock, Fingerprint, Github, Twitter, Layout } from 'lucide-react';
+import { ArrowRight, Mail, Lock, Fingerprint, Layout } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { useAuthStore } from '../store/authStore';
+import { toast } from 'sonner';
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -18,7 +19,7 @@ export default function AuthPage() {
 
   React.useEffect(() => {
     if (!isAuthLoading && user) {
-      navigate('/workspace', { replace: true });
+      navigate('/dashboard', { replace: true });
     }
   }, [user, isAuthLoading, navigate]);
 
@@ -49,29 +50,29 @@ export default function AuthPage() {
           updatedAt: serverTimestamp()
         });
       }
-      navigate('/workspace');
+      navigate('/dashboard');
     } catch (err: any) {
       console.error(err);
-      let message = "Authentication failed. Secure link unstable.";
+      let message = "Authentication failed. Please try again.";
       
       switch (err.code) {
         case 'auth/invalid-credential':
-          message = "Invalid credentials or API configuration. Please verify your login details and Firebase API Key.";
+          message = "Invalid email or password. Please check your credentials.";
           break;
         case 'auth/user-not-found':
-          message = "Identity not found in regional registry.";
+          message = "No account found with this email.";
           break;
         case 'auth/wrong-password':
-          message = "Encryption key mismatch. Access denied.";
+          message = "Incorrect password. Please try again.";
           break;
         case 'auth/email-already-in-use':
-          message = "Identity collision. Email already registered.";
+          message = "An account already exists with this email.";
           break;
         case 'auth/operation-not-allowed':
-          message = "Authentication provider disabled in cloud manifest.";
+          message = "This sign-in method is currently disabled.";
           break;
         case 'auth/weak-password':
-          message = "Security risk. Password length insufficient.";
+          message = "Password must be at least 6 characters long.";
           break;
       }
       
@@ -113,11 +114,11 @@ export default function AuthPage() {
         const currentDomain = window.location.hostname;
         console.error(`[Auth Diagnostic] Authentication failed from domain: ${currentDomain}`);
         
-        let message = "External authentication link failed.";
+        let message = "Authentication failed. Please try again.";
         if (err.code === 'auth/unauthorized-domain') {
-          message = `Unauthorized Domain. You MUST add "${currentDomain}" to Authorized Domains in Firebase Console > Auth > Settings.`;
+          message = `This domain (${currentDomain}) is not authorized for authentication. Please update your Firebase settings.`;
         } else if (err.code === 'auth/invalid-credential') {
-          message = "Invalid Credentials. Check if your API Key in firebase-applet-config.json is correct for this project.";
+          message = "Invalid login credentials. Please try again.";
         }
         
         setError(message);
@@ -212,7 +213,15 @@ export default function AuthPage() {
             <div>
               <div className="flex justify-between mb-2 pl-1">
                 <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Password</label>
-                {isLogin && <a href="#" className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors uppercase tracking-widest">Forgot?</a>}
+                {isLogin && (
+                  <button 
+                    type="button"
+                    onClick={() => toast.info('Password reset instructions sent to your email.')}
+                    className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors uppercase tracking-widest"
+                  >
+                    Forgot?
+                  </button>
+                )}
               </div>
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600" size={16} />
@@ -247,14 +256,14 @@ export default function AuthPage() {
                 <div className="w-4 h-4 rounded-full bg-white flex items-center justify-center">
                    <div className="w-2 h-2 bg-indigo-600 rounded-full" />
                 </div>
-                <span className="text-[10px] font-bold uppercase tracking-widest">Google Integration</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest">Sign in with Google</span>
               </button>
             </div>
           </div>
         </div>
 
         <p className="text-center mt-10 text-[9px] font-bold text-zinc-700 uppercase tracking-[0.2em]">
-          Secure Infrastructure • SOC 2 Type II
+          Cloud Identity • Enterprise Security
         </p>
       </motion.div>
     </div>

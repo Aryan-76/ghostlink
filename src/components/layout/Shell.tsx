@@ -1,5 +1,5 @@
-import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   MessageSquare, 
   BrainCircuit, 
@@ -8,7 +8,8 @@ import {
   LayoutDashboard, 
   Hash, 
   Command,
-  Network
+  Network,
+  Globe
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -42,11 +43,60 @@ const SidebarItem = ({ to, icon, label, active }: SidebarItemProps) => (
   </Link>
 );
 
+import { Toaster, toast } from 'sonner';
 import { useAuthStore } from '../../store/authStore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
 
 export const Shell = React.memo(({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user } = useAuthStore();
+
+  useEffect(() => {
+    let isSubscribed = true;
+
+    const syncUserProfile = async () => {
+      if (!user || !user.uid) return;
+      
+      try {
+        const userRef = doc(db, 'users', user.uid);
+        // Only attempt to sync if we're not already in the middle of a sync
+        const userSnap = await getDoc(userRef);
+        
+        if (isSubscribed && !userSnap.exists()) {
+          console.log("[Shell] Syncing new user profile...");
+          await setDoc(userRef, {
+            userId: user.uid,
+            email: user.email,
+            displayName: user.displayName || 'Anonymous',
+            photoURL: user.photoURL || '',
+            updatedAt: serverTimestamp(),
+            createdAt: serverTimestamp()
+          });
+        }
+      } catch (error: any) {
+        // Silently handle "client is offline" errors
+        if (!error?.message?.includes('offline')) {
+          console.error("Profile sync error:", error);
+        }
+      }
+    };
+    
+    syncUserProfile();
+    return () => { isSubscribed = false; };
+  }, [user]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        navigate('/command');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [navigate]);
   
   const isAuth = location.pathname === '/auth';
   const isLanding = location.pathname === '/';
@@ -55,23 +105,19 @@ export const Shell = React.memo(({ children }: { children: React.ReactNode }) =>
   if (isAuth || isLanding || isMobileView) return <>{children}</>;
 
   const menuItems = [
-    { to: '/workspace', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
-    { to: '/chat', icon: <MessageSquare size={18} />, label: 'Messaging' },
-    { to: '/ai-collab', icon: <BrainCircuit size={18} />, label: 'Documents' },
-    { to: '/command', icon: <Command size={18} />, label: 'Terminal' },
-    { to: '/threads', icon: <Hash size={18} />, label: 'Activity' },
-    { to: '/profile', icon: <User size={18} />, label: 'Settings' },
+    { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
+    { to: '/community', icon: <Globe size={18} />, label: 'Community' },
+    { to: '/messages', icon: <MessageSquare size={18} />, label: 'Messages' },
+    { to: '/settings', icon: <User size={18} />, label: 'Settings' },
   ];
 
   const userInitial = user?.displayName ? user.displayName[0] : (user?.email ? user.email[0] : 'U');
-  const currentPageLabel = menuItems.find(item => item.to === location.pathname)?.label || 'Workspace';
+  const currentPageLabel = menuItems.find(item => item.to === location.pathname)?.label || 'Project';
 
   return (
     <div className="flex h-screen bg-[#020306] overflow-hidden relative selection:bg-indigo-500/30 selection:text-white">
-      {/* Background Ambient Glows */}
-      <div className="absolute top-0 right-0 w-1/3 h-1/3 bg-violet-600/5 blur-[120px] pointer-events-none z-0" />
-      <div className="absolute bottom-0 left-0 w-1/4 h-1/4 bg-cyan-600/5 blur-[100px] pointer-events-none z-0" />
-
+      <Toaster theme="dark" position="top-center" />
+      
       {/* Sidebar */}
       <aside className="w-[240px] bg-[#0A0B0E] border-r border-white/5 flex flex-col flex-shrink-0 z-20" aria-label="Main Sidebar">
         <div className="p-6">
@@ -97,13 +143,13 @@ export const Shell = React.memo(({ children }: { children: React.ReactNode }) =>
         </div>
 
         <div className="mt-auto p-4 border-t border-white/5 bg-white/[0.01]">
-          <Link to="/profile" className="flex items-center gap-3 px-2 py-1 group cursor-pointer" role="button" aria-label="User Profile">
+          <Link to="/settings" className="flex items-center gap-3 px-2 py-1 group cursor-pointer" role="button" aria-label="User Profile">
             <div className="w-8 h-8 rounded-full bg-zinc-800 border border-white/10 flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-zinc-500 uppercase">
               {userInitial}
             </div>
             <div className="overflow-hidden">
               <div className="text-xs font-semibold text-white truncate">{user?.displayName || user?.email || 'User'}</div>
-              <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Early Access Plan</div>
+              <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">MVP Early Access</div>
             </div>
           </Link>
         </div>
@@ -114,7 +160,7 @@ export const Shell = React.memo(({ children }: { children: React.ReactNode }) =>
         <header className="h-16 border-b border-white/5 bg-[#020306]/80 backdrop-blur-md flex items-center justify-between px-8" role="banner">
           <div className="flex items-center gap-4">
             <nav className="flex items-center gap-2 text-zinc-500 text-xs font-medium" aria-label="Breadcrumb">
-              <Link to="/workspace" className="hover:text-zinc-300 transition-colors">GhostLink</Link>
+              <Link to="/dashboard" className="hover:text-zinc-300 transition-colors">GhostLink</Link>
               <span className="opacity-20" aria-hidden="true">/</span>
               <span className="text-zinc-100 font-medium">{currentPageLabel}</span>
             </nav>
@@ -127,23 +173,19 @@ export const Shell = React.memo(({ children }: { children: React.ReactNode }) =>
               </div>
               <input 
                 type="text" 
-                placeholder="Search..." 
+                placeholder="Search projects..." 
                 aria-label="Universal Search"
                 className="bg-white/5 border border-white/10 rounded-md pl-9 pr-12 py-1.5 text-xs focus:outline-none focus:border-white/20 w-64 text-zinc-300 transition-all font-medium"
               />
-              <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none" aria-hidden="true">
-                <span className="text-zinc-600 text-[10px] font-mono border border-zinc-800 px-1 rounded">⌘K</span>
-              </div>
-            </div>
-
-            <div className="flex -space-x-2" aria-label="Collaborators Online">
-              <div title="Collaborator Online" className="w-7 h-7 rounded-full border-2 border-[#020306] bg-violet-500 flex items-center justify-center text-[10px] font-bold text-white z-20">AR</div>
-              <div title="Collaborator Online" className="w-7 h-7 rounded-full border-2 border-[#020306] bg-cyan-500 flex items-center justify-center text-[10px] font-bold text-white z-10">JD</div>
             </div>
 
             <button 
+              onClick={() => {
+                navigator.clipboard.writeText(window.location.href);
+                toast.success('Link copied to clipboard');
+              }}
               className="bg-white hover:bg-zinc-200 text-black px-4 py-1.5 rounded-md text-xs font-semibold transition-all active:scale-95"
-              aria-label="Share workspace"
+              aria-label="Share page"
             >
               Share
             </button>
@@ -164,21 +206,6 @@ export const Shell = React.memo(({ children }: { children: React.ReactNode }) =>
             </motion.div>
           </AnimatePresence>
         </main>
-
-        <footer className="h-10 border-t border-white/5 bg-[#020306] flex items-center justify-between px-8" role="contentinfo">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden="true"></div>
-              <span className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider">Cloud Sync Connected</span>
-            </div>
-            <div className="h-3 w-px bg-zinc-800" aria-hidden="true"></div>
-            <span className="text-[10px] text-zinc-600 font-mono tracking-tight uppercase">v1.0.0-BETA</span>
-          </div>
-          <div className="flex items-center gap-6">
-            <span className="text-[10px] text-zinc-600 font-mono uppercase tracking-tight">Latency: 24ms</span>
-            <span className="text-[10px] text-zinc-600 font-mono tracking-wider bg-white/5 px-2 py-0.5 rounded uppercase">Encrypted</span>
-          </div>
-        </footer>
       </div>
     </div>
   );

@@ -1,9 +1,9 @@
 export type Message = {
-  id?: string;
-  user: string;
+  id: string;
+  senderId: string;
+  senderName: string;
   text: string;
-  time: string;
-  isAI?: boolean;
+  createdAt: any; // Timestamp
 };
 
 export type ProjectStatus = 'active' | 'planned' | 'archived' | 'completed';
@@ -12,23 +12,39 @@ export type Project = {
   id: string;
   title: string;
   status: ProjectStatus;
-  members: string[];
+  ownerId: string;
+  collaborators: string[];
   description?: string;
+  createdAt: any;
+  updatedAt: any;
 };
 
-export type ActivityType = 'edit' | 'comment' | 'complete' | 'alert';
+export type Document = {
+  id: string;
+  title: string;
+  content: string;
+  createdBy: string;
+  createdAt: any;
+  updatedAt: any;
+  type?: 'markdown' | 'file';
+  fileUrl?: string;
+  fileName?: string;
+};
+
+export type ActivityType = 'project_created' | 'message_sent' | 'doc_updated' | 'member_added' | 'file_uploaded';
 
 export type Activity = {
   id: string;
-  title: string;
-  time: string;
   type: ActivityType;
-  user?: string;
+  actorId: string;
+  actorName: string;
+  title: string;
+  time?: string; // For display
+  timestamp: any;
 };
 
 export type WorkspaceStats = {
   activeProjects: number;
-  teamCapacity: string;
-  openIssues: number;
-  issueTrend?: string;
+  totalActivities: number;
+  teamMembers: number;
 };

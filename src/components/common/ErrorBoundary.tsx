@@ -43,16 +43,16 @@ export class ErrorBoundary extends React.Component<Props, State> {
             </div>
             
             <div className="space-y-2">
-              <h1 className="text-xl font-bold text-white tracking-tight">System Exception Detected</h1>
+              <h1 className="text-xl font-bold text-white tracking-tight">Something went wrong</h1>
               <p className="text-sm text-zinc-500 leading-relaxed">
-                The application encountered an unexpected state. Infrastructure link interrupted.
+                The application encountered an unexpected error. Please try refreshing the page.
               </p>
             </div>
 
             <div className="p-4 bg-white/[0.02] border border-white/5 rounded-xl text-left">
-              <p className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest mb-1">Stack Trace Fragment</p>
+              <p className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest mb-1">Error Details</p>
               <p className="text-[11px] font-mono text-red-400/80 line-clamp-3">
-                {error?.message || 'Unknown execution failure'}
+                {error?.message || 'An unexpected error occurred'}
               </p>
             </div>
 
@@ -61,7 +61,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
               className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-indigo-500 transition-all flex items-center justify-center gap-2 group"
             >
               <RefreshCcw size={16} className="group-hover:rotate-180 transition-transform duration-500" />
-              Reboot Application
+              Reload Page
             </button>
           </motion.div>
         </div>

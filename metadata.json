@@ -1,6 +1,6 @@
 {
   "name": "GhostLink",
-  "description": "A premium AI-native collaboration platform with a cinematic glassmorphic UI.",
+  "description": "A robust, real-time team collaboration workspace featuring chat, documents, and project management.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

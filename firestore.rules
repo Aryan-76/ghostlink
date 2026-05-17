@@ -1,120 +1,63 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 0. Global Safety Net
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // Phase 3: Primitives
+    // Basic Auth Primitives
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isEmailVerified() {
-      return isSignedIn() && request.auth.token.email_verified == true;
-    }
-
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    function isOwner(ownerId) {
-      return isSignedIn() && request.auth.uid == ownerId;
-    }
-
-    function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
-    }
-
-    // 1. User Rules
-    function isValidUser(data) {
-      return data.userId is string && data.userId == request.auth.uid &&
-             data.email is string && data.email.size() <= 100 &&
-             data.displayName is string && data.displayName.size() <= 100 &&
-             data.role in ['admin', 'user'] &&
-             data.status is string &&
-             data.avatarUrl is string &&
-             data.updatedAt is timestamp &&
-             data.keys().hasAll(['userId', 'email', 'displayName', 'role', 'status', 'avatarUrl', 'updatedAt']) &&
-             data.keys().size() == 7;
-    }
-
-    match /users/{userId} {
-      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
-      allow list: if isAdmin();
-      allow create: if isSignedIn() && userId == request.auth.uid && isValidUser(incoming()) && incoming().role == 'user';
-      allow update: if isSignedIn() && userId == request.auth.uid && isValidUser(incoming()) && 
-                    incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'status', 'avatarUrl', 'updatedAt']) &&
-                    incoming().updatedAt == request.time;
-    }
-
-    // 2. Project Rules
-    function isValidProject(data) {
-      return data.title is string && data.title.size() <= 100 &&
-             data.status in ['active', 'planned', 'archived', 'completed'] &&
-             data.ownerId is string &&
-             data.members is list && data.members.size() <= 20 &&
-             data.keys().hasAll(['title', 'status', 'ownerId', 'members']) &&
-             data.keys().size() >= 4;
-    }
-
+    // Projects: Access is restricted to owners and collaborators
     match /projects/{projectId} {
-      allow get: if isSignedIn() && (request.auth.uid == existing().ownerId || request.auth.uid in existing().members || isAdmin());
-      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || request.auth.uid in resource.data.members);
-      
-      allow create: if isEmailVerified() && isValidId(projectId) && isValidProject(incoming()) && 
-                    incoming().createdAt == request.time && incoming().ownerId == request.auth.uid;
-      
-      allow update: if isSignedIn() && isValidProject(incoming()) && (
-        (existing().status != 'completed' && existing().status != 'archived' && 
-         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'members', 'status', 'updatedAt'])) ||
-        isAdmin()
-      ) && incoming().updatedAt == request.time && incoming().ownerId == existing().ownerId;
+      function canAccessProject() {
+        return isSignedIn() && (
+          resource.data.ownerId == request.auth.uid || 
+          request.auth.uid in resource.data.collaborators
+        );
+      }
 
-      allow delete: if isAdmin() || (isSignedIn() && existing().ownerId == request.auth.uid);
+      allow read: if canAccessProject();
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update: if canAccessProject() && 
+                    request.resource.data.ownerId == resource.data.ownerId;
+      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+
+      // Messages sub-collection
+      match /messages/{messageId} {
+        allow read: if canAccessProject();
+        allow create: if canAccessProject() && request.resource.data.senderId == request.auth.uid;
+      }
+
+      // Documents sub-collection
+      match /documents/{docId} {
+        allow read: if canAccessProject();
+        allow create: if canAccessProject() && request.resource.data.createdBy == request.auth.uid;
+        allow update: if canAccessProject();
+        allow delete: if canAccessProject();
+      }
     }
 
-    // 3. Activity Rules (Top-level for unified feed)
-    function isValidActivity(data) {
-      return data.title is string && data.title.size() <= 200 &&
-             data.type in ['edit', 'comment', 'complete', 'alert'] &&
-             data.userId == request.auth.uid &&
-             data.timestamp == request.time &&
-             data.keys().hasAll(['title', 'type', 'userId', 'timestamp']) &&
-             data.keys().size() == 4;
-    }
-
+    // Activities: Global feed, restricted to creator
     match /activities/{activityId} {
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow create: if isEmailVerified() && isValidId(activityId) && isValidActivity(incoming());
+      allow list: if isSignedIn() && (resource == null || resource.data.actorId == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.actorId == request.auth.uid;
     }
 
-    // 4. Chat Rules
-    function isValidMessage(data) {
-      return data.text is string && data.text.size() <= 2000 &&
-             data.userId in [request.auth.uid, 'ghost-assistant'] &&
-             data.userDisplayName is string && data.userDisplayName.size() <= 100 &&
-             data.isAI is bool &&
-             data.timestamp == request.time &&
-             data.keys().hasAll(['text', 'userId', 'userDisplayName', 'isAI', 'timestamp']) &&
-             data.keys().size() == 5;
+    // User Profiles
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == userId;
     }
 
-    match /chat/messages/entries/{messageId} {
-      // Global chat list: enforce signed in check at rule level
-      allow list: if isSignedIn();
-      allow get: if isSignedIn();
-      allow create: if isEmailVerified() && isValidId(messageId) && isValidMessage(incoming());
+    // Direct Conversations
+    match /conversations/{convId} {
+      allow read: if isSignedIn() && request.auth.uid in resource.data.participants;
+      allow create: if isSignedIn() && request.auth.uid in request.resource.data.participants;
+      allow update: if isSignedIn() && request.auth.uid in resource.data.participants;
+
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participants;
+        allow create: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participants;
+      }
     }
   }
 }

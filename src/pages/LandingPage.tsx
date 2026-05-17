@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
+import { toast } from 'sonner';
 import { useAuthStore } from '../store/authStore';
 
 const Nav = React.memo(() => {
@@ -32,7 +33,13 @@ const Nav = React.memo(() => {
       
       <div className="hidden md:flex items-center gap-8">
         {['Product', 'Integrations', 'Security', 'Enterprise'].map((item) => (
-          <a key={item} href="#" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">{item}</a>
+          <button 
+            key={item} 
+            onClick={() => toast.info(`${item} information coming soon.`)}
+            className="text-sm font-medium text-zinc-400 hover:text-white transition-colors"
+          >
+            {item}
+          </button>
         ))}
       </div>
 
@@ -67,14 +74,14 @@ const Hero = () => (
       >
         <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/[0.03] border border-white/10 rounded-full text-zinc-400 mb-8">
           <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-          <span className="text-[10px] font-bold uppercase tracking-widest">Public Beta v1.0 is live</span>
+          <span className="text-[10px] font-bold uppercase tracking-widest">Minimalist Collab MVP v1.0</span>
         </div>
         <h1 className="text-5xl md:text-8xl font-bold text-white tracking-tight mb-8 leading-[1.1]">
-          The intelligent workspace <br />
-          <span className="text-zinc-500">for modern teams.</span>
+          Team collaboration <br />
+          <span className="text-zinc-500">done better.</span>
         </h1>
         <p className="text-lg md:text-xl text-zinc-400 max-w-2xl mx-auto mb-12 font-medium leading-relaxed">
-          GhostLink combines real-time collaboration with context-aware AI to help your team ship faster, together.
+          GhostLink combines real-time messaging, project tracking, and document management in one unified workspace.
         </p>
       </motion.div>
 
@@ -132,9 +139,9 @@ const Features = () => (
     <div className="max-w-7xl mx-auto">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
         {[
-          { icon: <Lock />, title: "Secure by Design", desc: "Enterprise-grade encryption for all your data. Your workspace is isolated and protected." },
-          { icon: <Globe />, title: "Global Sync", desc: "Real-time synchronization across teams and regions. Zero latency, 100% data consistency." },
-          { icon: <Cpu />, title: "Contextual AI", desc: "Our AI understands your project structure, helping you write documentation and ship code faster." }
+          { icon: Lock, title: "Secure by Design", desc: "Enterprise-grade protection for your data. Your workspace is isolated with industry-standard security." },
+          { icon: Globe, title: "Global Sync", desc: "Real-time synchronization across teams. Low latency and reliable data consistency for every project." },
+          { icon: Layout, title: "Unified Workspace", desc: "Messaging, projects, and documents in one place. No more context switching between different tools." }
         ].map((feature, i) => (
           <motion.div 
             initial={{ opacity: 0, y: 12 }}
@@ -145,7 +152,7 @@ const Features = () => (
             className="p-10 bg-white/[0.02] border border-white/5 rounded-2xl hover:border-white/10 transition-all group"
           >
             <div className="w-12 h-12 rounded-xl bg-white/[0.03] text-indigo-400 flex items-center justify-center mb-10 group-hover:bg-indigo-500/10 transition-colors">
-              {React.cloneElement(feature.icon as React.ReactElement, { size: 24 })}
+              <feature.icon size={24} />
             </div>
             <h3 className="text-xl font-bold text-white mb-6 tracking-tight">{feature.title}</h3>
             <p className="text-zinc-500 leading-relaxed font-medium text-sm">{feature.desc}</p>
@@ -230,8 +237,8 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto mt-24 pt-8 border-t border-white/5 flex flex-col sm:flex-row justify-between items-center gap-4 text-[10px] font-bold text-zinc-800 uppercase tracking-widest">
           <p>© 2026 GHOSTLINK. ALL RIGHTS RESERVED.</p>
           <div className="flex gap-8">
-            <a href="#" className="hover:text-white transition-colors">Privacy</a>
-            <a href="#" className="hover:text-white transition-colors">Security</a>
+            <button onClick={() => toast.info('Privacy policy coming soon')} className="hover:text-white transition-colors">Privacy</button>
+            <button onClick={() => toast.info('Terms of service coming soon')} className="hover:text-white transition-colors">Security</button>
           </div>
         </div>
       </footer>

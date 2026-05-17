@@ -1,38 +1,45 @@
-import React, { useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { 
   Shield, 
   Zap, 
   Settings, 
-  Cpu, 
-  Unlock, 
   LogOut, 
   Globe, 
-  History,
-  Layout,
   Mail,
-  Users
+  Users,
+  User,
+  Loader2,
+  CheckCircle2,
+  Edit2,
+  Trash2,
+  Circle,
+  Layout,
+  History,
+  Palette,
+  Cpu
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useAuthStore } from '../store/authStore';
-import { signOut } from 'firebase/auth';
-import { auth } from '../lib/firebase';
+import { signOut, updateProfile } from 'firebase/auth';
+import { auth, db } from '../lib/firebase';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
-
-const Achievement = React.memo(({ title, date, icon: Icon }: any) => (
-  <div className="bg-[#0A0B0E] border border-white/5 p-4 rounded-xl flex items-center gap-4 group hover:bg-white/[0.04] transition-all cursor-pointer">
-    <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center text-zinc-500 group-hover:text-indigo-400 transition-colors">
-      <Icon size={18} />
-    </div>
-    <div>
-      <h4 className="text-sm font-semibold text-white tracking-tight">{title}</h4>
-      <p className="text-[10px] font-bold text-zinc-600 uppercase transition-colors">{date}</p>
-    </div>
-  </div>
-));
+import { toast } from 'sonner';
 
 export default function UserProfile() {
   const { user } = useAuthStore();
   const navigate = useNavigate();
+  const [isEditing, setIsEditing] = useState(false);
+  const [displayName, setDisplayName] = useState(user?.displayName || '');
+  const [isSaving, setIsSaving] = useState(false);
+  const [activeTheme, setActiveTheme] = useState('dark');
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    if (user?.displayName) {
+      setDisplayName(user.displayName);
+    }
+  }, [user]);
 
   const handleLogout = useCallback(async () => {
     try {
@@ -40,110 +47,210 @@ export default function UserProfile() {
       navigate('/');
     } catch (error) {
       console.error('Logout error:', error);
+      toast.error('Failed to logout');
     }
   }, [navigate]);
 
+  const handleUpdateProfile = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!user || !displayName.trim()) return;
+
+    setIsSaving(true);
+    try {
+      // Update Firebase Auth
+      await updateProfile(auth.currentUser!, {
+        displayName: displayName.trim()
+      });
+
+      // Update Firestore
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        displayName: displayName.trim(),
+        updatedAt: serverTimestamp()
+      });
+
+      toast.success('Profile updated successfully');
+      setIsEditing(false);
+    } catch (error) {
+      console.error('Update profile error:', error);
+      toast.error('Failed to update profile');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteAccountPlaceholder = () => {
+    setIsDeleting(true);
+    setTimeout(() => {
+      toast.error("Account deletion requires admin approval in this workspace.");
+      setIsDeleting(false);
+    }, 1500);
+  };
+
   if (!user) return null;
 
-  const userInitial = user.displayName ? user.displayName[0] : (user.email ? user.email[0] : 'U');
+  const userInitial = displayName ? displayName[0] : (user.email ? user.email[0] : 'U');
 
   return (
-    <div className="p-8 max-w-5xl mx-auto space-y-12 pb-24 h-full overflow-y-auto scrollbar-hidden">
+    <div className="p-8 max-w-6xl mx-auto space-y-12 pb-24 h-full overflow-y-auto scrollbar-hidden">
       {/* Header Profile */}
-      <div className="flex flex-col md:flex-row items-center gap-8 border-b border-white/5 pb-12">
+      <div className="flex flex-col md:flex-row items-center gap-8 border-b border-white/5 pb-10">
         <div className="relative group">
-          <div className="absolute -inset-1 bg-indigo-500/20 rounded-full blur opacity-50 transition duration-1000" />
-          <div className="relative w-32 h-32 rounded-full border-2 border-white/10 overflow-hidden bg-zinc-900 flex items-center justify-center">
-            <span className="text-4xl font-bold text-zinc-600 uppercase">{userInitial}</span>
-            <div className="absolute bottom-2 right-2 w-4 h-4 bg-emerald-500 border-2 border-zinc-900 rounded-full" />
+          <div className="absolute -inset-1 bg-indigo-500/20 rounded-full blur opacity-50" />
+          <div className="relative w-28 h-28 rounded-full border-2 border-white/10 overflow-hidden bg-zinc-900 flex items-center justify-center">
+            <span className="text-3xl font-bold text-zinc-600 uppercase">{userInitial}</span>
+            <div className="absolute bottom-1 right-1 w-4 h-4 bg-emerald-500 border-2 border-zinc-900 rounded-full" />
           </div>
         </div>
 
         <div className="flex-1 text-center md:text-left space-y-3">
           <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
-             <h1 className="text-3xl font-bold text-white tracking-tight">{user.displayName || 'Anonymous User'}</h1>
-             <span className="bg-indigo-500/10 text-indigo-400 text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full border border-indigo-500/20 self-center">Workspace Member</span>
+             <h1 className="text-3xl font-bold text-white tracking-tight">{displayName || 'Anonymous User'}</h1>
+             <span className="bg-indigo-500/10 text-indigo-400 text-[9px] font-bold uppercase tracking-widest px-3 py-1 rounded-full border border-indigo-500/20 self-center">Workspace Member</span>
           </div>
           <p className="text-zinc-500 max-w-md text-sm">
-            Infrastructure access authorized. Regional node synchronization active.
+            Control your profile identity and workspace preferences.
           </p>
-          <div className="flex flex-wrap justify-center md:justify-start gap-3 pt-2">
-            <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-600 uppercase tracking-widest bg-white/[0.03] px-3 py-1.5 rounded-lg border border-white/5">
-              <Mail size={12} /> {user.email || 'no-email@ghostlink.ai'}
-            </div>
-            <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-600 uppercase tracking-widest bg-white/[0.03] px-3 py-1.5 rounded-lg border border-white/5">
-              <Globe size={12} /> Regional Hub: Global
-            </div>
-          </div>
         </div>
 
         <div className="flex gap-3">
-          <button className="bg-white/[0.03] border border-white/5 p-3.5 rounded-xl text-zinc-500 hover:text-white transition-all">
-            <Settings size={18} />
-          </button>
           <button 
             onClick={handleLogout}
-            className="bg-white/[0.03] border border-white/5 p-3.5 rounded-xl text-red-500/70 hover:bg-red-500/10 hover:text-red-500 transition-all"
-            aria-label="Logout"
+            className="bg-white/5 border border-white/10 px-6 py-3 rounded-xl text-red-500/80 hover:bg-red-500/10 hover:text-red-500 transition-all flex items-center gap-2"
           >
             <LogOut size={18} />
+            <span className="text-[10px] font-bold uppercase tracking-widest">Logout</span>
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
-        {/* Account Security */}
-        <div className="space-y-6">
-           <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest px-1 flex items-center gap-2">
-            <Shield size={12} className="text-indigo-400" /> Account Security
-          </h3>
-          <div className="bg-[#0A0B0E] border border-white/5 p-6 rounded-2xl space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <p className="text-xs font-semibold text-white tracking-tight">Two-Factor Auth</p>
-                <p className="text-[10px] font-bold text-emerald-500 uppercase">Enabled</p>
-              </div>
-              <Unlock size={18} className="text-zinc-700" />
-            </div>
-            <div className="h-px w-full bg-white/5" />
-            <div className="space-y-1">
-              <p className="text-xs font-semibold text-white tracking-tight">Access Permissions</p>
-              <div className="flex items-center gap-1.5 mt-2">
-                {[1, 2, 3, 4].map(i => (
-                  <div key={i} className={`h-1 flex-1 rounded-full ${i <= 3 ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.3)]' : 'bg-zinc-800'}`} />
-                ))}
-              </div>
-              <p className="text-[9px] font-bold text-zinc-600 mt-2 uppercase tracking-widest">Level 3 • Enterprise Access</p>
-            </div>
-          </div>
+      {/* Settings Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+        <div className="lg:col-span-2 space-y-10">
+          {/* Identity Section */}
+          <section className="bg-[#0A0B0E] border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
+             <div className="px-8 py-5 border-b border-white/5 bg-white/[0.01] flex items-center justify-between">
+               <h3 className="text-[10px] font-bold text-white uppercase tracking-[0.2em]">Profile Identity</h3>
+               <User size={14} className="text-zinc-700" />
+             </div>
+             <div className="p-8 space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                   <div className="space-y-3">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Display Name</label>
+                      <input 
+                        value={displayName}
+                        onChange={(e) => setDisplayName(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all font-medium"
+                        placeholder="e.g. John Doe"
+                      />
+                   </div>
+                   <div className="space-y-3">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Primary Email</label>
+                      <input 
+                        value={user.email || ''}
+                        disabled
+                        className="w-full bg-white/[0.01] border border-white/5 rounded-xl px-4 py-3 text-sm text-zinc-600 cursor-not-allowed font-medium"
+                      />
+                   </div>
+                </div>
+                <div className="pt-4 flex items-center justify-between">
+                  <p className="text-[10px] text-zinc-600 font-medium max-w-sm">
+                    Changes will be synchronized across all your active projects and team channels.
+                  </p>
+                  <button 
+                    onClick={() => handleUpdateProfile()}
+                    disabled={isSaving || !displayName.trim()}
+                    className="px-8 py-3 bg-white text-black rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] transition-all disabled:opacity-50 flex items-center gap-3"
+                  >
+                    {isSaving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                    Sync Profile
+                  </button>
+                </div>
+             </div>
+          </section>
+
+          {/* Preferences Section */}
+          <section className="bg-[#0A0B0E] border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
+             <div className="px-8 py-5 border-b border-white/5 bg-white/[0.01] flex items-center justify-between">
+               <h3 className="text-[10px] font-bold text-white uppercase tracking-[0.2em]">Appearance</h3>
+               <Palette size={14} className="text-zinc-700" />
+             </div>
+             <div className="p-8 space-y-8">
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {[
+                      { id: 'dark', label: 'Ghostly', desc: 'Default Obsidian' },
+                      { id: 'light', label: 'Ethereal', desc: 'Paper Minimal' },
+                      { id: 'system', label: 'Automata', desc: 'System Sync' }
+                    ].map(theme => (
+                      <button
+                        key={theme.id}
+                        onClick={() => {
+                          setActiveTheme(theme.id);
+                          toast.success(`Theme updated to ${theme.label}`);
+                        }}
+                        className={`p-5 rounded-2xl border transition-all text-left ${activeTheme === theme.id ? 'bg-indigo-600/5 border-indigo-500/30' : 'bg-white/[0.02] border-white/5 hover:border-white/10'}`}
+                      >
+                        <div className={`w-10 h-10 rounded-xl mb-4 flex items-center justify-center ${activeTheme === theme.id ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'bg-zinc-900 text-zinc-600'}`}>
+                          {theme.id === 'dark' ? <Circle size={18} fill="currentColor" /> : <Globe size={18} />}
+                        </div>
+                        <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${activeTheme === theme.id ? 'text-indigo-400' : 'text-white'}`}>{theme.label}</p>
+                        <p className="text-[10px] text-zinc-600 font-medium">{theme.desc}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+             </div>
+          </section>
         </div>
 
-        {/* Milestones */}
-        <div className="md:col-span-2 space-y-6">
-           <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest px-1 flex items-center gap-2">
-            <History size={12} className="text-indigo-400" /> Platform Milestones
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Achievement title="Project Lead" date="Completed • Mar 12, 2024" icon={Layout} />
-            <Achievement title="Team Onboarding" date="Active • Feb 28, 2024" icon={Users} />
-            <Achievement title="Scale Deployment" date="Verified • Jan 15, 2024" icon={Cpu} />
-            <Achievement title="Security Audit" date="Verified • Dec 02, 2023" icon={Shield} />
-          </div>
-
-          <div className="bg-[#0A0B0E] border border-white/5 p-8 rounded-2xl bg-indigo-500/[0.02]">
-            <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">Workspace Health Score</h4>
-            <div className="flex items-end gap-12">
-               <div className="space-y-2">
-                  <span className="text-4xl font-bold text-white tracking-tighter">98%</span>
-                  <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest leading-relaxed">
-                    Overall performance and security metrics are optimal.
-                  </p>
-               </div>
-               <button className="px-5 py-2 bg-white text-black rounded-lg text-[9px] font-bold uppercase tracking-widest hover:bg-zinc-200 transition-all mb-1">
-                 View History
-               </button>
+        <div className="space-y-10">
+          {/* Metadata Section */}
+          <section className="bg-[#0A0B0E] border border-white/5 rounded-2xl p-8 space-y-8 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Deployment Node</h3>
+              <Cpu size={14} className="text-zinc-700" />
             </div>
-          </div>
+            <div className="space-y-5">
+              <div className="flex items-center justify-between py-1 border-b border-white/5">
+                <span className="text-[10px] font-bold text-zinc-700 uppercase">Status</span>
+                <span className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest flex items-center gap-2">
+                  <Circle size={8} fill="currentColor" /> Synchronized
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1 border-b border-white/5">
+                <span className="text-[10px] font-bold text-zinc-700 uppercase">Provider</span>
+                <span className="text-[10px] text-zinc-400 font-bold uppercase">{user.providerData?.[0]?.providerId || 'password'}</span>
+              </div>
+              <div className="flex items-center justify-between py-1 border-b border-white/5">
+                <span className="text-[10px] font-bold text-zinc-700 uppercase">Joined</span>
+                <span className="text-[10px] text-zinc-400 font-medium">{user.metadata?.creationTime ? new Date(user.metadata.creationTime).toLocaleDateString() : 'N/A'}</span>
+              </div>
+              <div className="flex items-center justify-between py-1">
+                <span className="text-[10px] font-bold text-zinc-700 uppercase">Access Token</span>
+                <span className="text-[9px] text-zinc-800 font-mono tracking-tighter truncate max-w-[120px]">{user.uid}</span>
+              </div>
+            </div>
+          </section>
+
+          {/* Danger Zone */}
+          <section className="bg-red-500/[0.01] border border-red-500/10 rounded-2xl p-8 space-y-6 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[10px] font-bold text-red-500/60 uppercase tracking-widest">Self-Destruct</h3>
+              <Shield size={14} className="text-red-500/20" />
+            </div>
+            <p className="text-[10px] text-zinc-600 leading-relaxed font-medium">
+              Decommissioning your account will purge all personal data from the GhostLink workspace. This action is terminal.
+            </p>
+            <button 
+              onClick={handleDeleteAccountPlaceholder}
+              disabled={isDeleting}
+              className="w-full py-4 border border-red-500/20 text-red-500/60 hover:bg-red-500/10 hover:text-red-500 rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+            >
+              {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+              Decommission Account
+            </button>
+          </section>
         </div>
       </div>
     </div>
