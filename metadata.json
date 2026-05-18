@@ -1,6 +1,6 @@
 {
   "name": "GhostLink",
-  "description": "A robust, real-time team collaboration workspace featuring chat, documents, and project management.",
+  "description": "High-performance team workspace with encrypted project nodes, real-time signals, and advanced document synchronization.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

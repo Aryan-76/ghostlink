@@ -25,6 +25,20 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if canAccessProject();
         allow create: if canAccessProject() && request.resource.data.senderId == request.auth.uid;
+        allow update: if canAccessProject(); // Support reactions
+        allow delete: if canAccessProject() && resource.data.senderId == request.auth.uid;
+      }
+
+      // Typing indicators
+      match /typing/{userId} {
+        allow read: if canAccessProject();
+        allow write: if isSignedIn() && request.auth.uid == userId;
+      }
+
+      // Document Presence
+      match /doc_presence/{presenceId} {
+        allow read: if canAccessProject();
+        allow write, delete: if isSignedIn();
       }
 
       // Documents sub-collection
@@ -36,10 +50,19 @@ service cloud.firestore {
       }
     }
 
-    // Activities: Global feed, restricted to creator
+    // Activities: Global feed for network transparency
     match /activities/{activityId} {
-      allow list: if isSignedIn() && (resource == null || resource.data.actorId == request.auth.uid);
-      allow create: if isSignedIn() && request.resource.data.actorId == request.auth.uid;
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
+      allow create: if isSignedIn();
+    }
+
+    // Global Community Messages
+    match /global_messages/{messageId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.senderId == request.auth.uid;
+      allow update: if isSignedIn(); // For reactions
+      allow delete: if isSignedIn() && resource.data.senderId == request.auth.uid;
     }
 
     // User Profiles
@@ -57,6 +80,8 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participants;
         allow create: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participants;
+        allow update: if isSignedIn(); // For reactions
+        allow delete: if isSignedIn() && resource.data.senderId == request.auth.uid;
       }
     }
   }

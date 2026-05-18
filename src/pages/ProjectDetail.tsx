@@ -31,15 +31,20 @@ import {
   X,
   Search,
   Check,
+  CheckCheck,
   Upload,
   File,
   Download,
   FileCode,
-  AlertCircle
+  AlertCircle,
+  Smile,
+  Reply,
+  MoreHorizontal,
+  Activity
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL, UploadTaskSnapshot, UploadTask } from 'firebase/storage';
 import { db, storage } from '../lib/firebase';
 import { useAuthStore } from '../store/authStore';
 import { useWorkspace } from '../hooks/useWorkspace';
@@ -50,61 +55,111 @@ export default function ProjectDetail() {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const { updateProject, deleteProject, logActivity, addCollaborator, allUsers } = useWorkspace();
+  const { updateProject, deleteProject, logActivity, addCollaborator, allUsers, activities } = useWorkspace();
   
   const [project, setProject] = useState<Project | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'chat' | 'docs' | 'settings'>('overview');
   const [isLoading, setIsLoading] = useState(true);
+
+  // Docs state
+  const [documents, setDocuments] = useState<DocType[]>([]);
+  const [activeDocId, setActiveDocId] = useState<string | null>(null);
 
   // Team Management
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [isInviting, setIsInviting] = useState(false);
 
+  // Document Presence
+  const [docPresence, setDocPresence] = useState<string[]>([]);
+  
+  useEffect(() => {
+    if (!projectId || !activeDocId || !user) return;
+    
+    const presenceRef = doc(db, 'projects', projectId, 'doc_presence', `${activeDocId}_${user.uid}`);
+    setDocPresence([]); // Reset on switch
+    
+    setDoc(presenceRef, {
+      userId: user.uid,
+      userName: user.displayName || user.email,
+      docId: activeDocId,
+      timestamp: serverTimestamp()
+    });
+    
+    const qPresence = query(
+      collection(db, 'projects', projectId, 'doc_presence'),
+      where('docId', '==', activeDocId)
+    );
+    
+    const unsubPresence = onSnapshot(qPresence, (snapshot) => {
+      const users = snapshot.docs
+        .map(doc => doc.data())
+        .filter(d => d.userId !== user.uid)
+        .map(d => d.userName) as string[];
+      setDocPresence(users);
+    });
+    
+    return () => {
+      unsubPresence();
+      deleteDoc(presenceRef).catch(() => {});
+    };
+  }, [projectId, activeDocId, user]);
+
   // Chat state
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Docs state
-  const [documents, setDocuments] = useState<DocType[]>([]);
-  const [activeDoc, setActiveDoc] = useState<DocType | null>(null);
+  // Docs state - secondary
   const [isSavingDoc, setIsSavingDoc] = useState(false);
   const [isCreatingDoc, setIsCreatingDoc] = useState(false);
   const [isDeletingDoc, setIsDeletingDoc] = useState(false);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [activeUploadTask, setActiveUploadTask] = useState<UploadTask | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const [localDoc, setLocalDoc] = useState<{ title: string; content: string } | null>(null);
+  const activeDoc = documents.find(d => d.id === activeDocId) || null;
 
-  // Auto-save effect
+  // Sync local doc with active doc when switching
   useEffect(() => {
-    if (!activeDoc || activeDoc.type === 'file' || !projectId) return;
+    if (activeDoc) {
+      setLocalDoc({ title: activeDoc.title, content: activeDoc.content });
+    } else {
+      setLocalDoc(null);
+    }
+  }, [activeDocId]);
 
-    // Use a reference check to avoid infinite loops if Firestore updates other fields
+  // Auto-save effect from local state
+  useEffect(() => {
+    if (!localDoc || !activeDoc || activeDoc.type === 'file' || !projectId) return;
+    
+    // Only save if different from Firestore
+    if (localDoc.title === activeDoc.title && localDoc.content === activeDoc.content) return;
+
     const timeoutId = setTimeout(async () => {
       try {
         setIsSavingDoc(true);
         const docRef = doc(db, 'projects', projectId, 'documents', activeDoc.id);
         
-        // Use setDoc with merge to be safer or updateDoc
         await updateDoc(docRef, {
-          title: activeDoc.title,
-          content: activeDoc.content,
+          title: localDoc.title,
+          content: localDoc.content,
           updatedAt: serverTimestamp()
         });
       } catch (error: any) {
-        // Silently ignore offline errors during auto-save
         if (!error?.message?.includes('offline')) {
           console.error("Auto-save error:", error);
         }
       } finally {
         setIsSavingDoc(false);
       }
-    }, 2000); // 2 second debounce
+    }, 2000);
 
     return () => clearTimeout(timeoutId);
-  }, [activeDoc?.content, activeDoc?.title, projectId]);
+  }, [localDoc, projectId, activeDoc?.id]);
 
   useEffect(() => {
     if (!projectId || !user) return;
@@ -148,15 +203,118 @@ export default function ProjectDetail() {
   }, [projectId, user, navigate]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (messages.length > 0) {
+      const isAtBottom = messagesEndRef.current?.parentElement && 
+        (messagesEndRef.current.parentElement.scrollHeight - messagesEndRef.current.parentElement.scrollTop - messagesEndRef.current.parentElement.clientHeight < 100);
+      
+      if (isAtBottom || messages.length <= 1) {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+  }, [messages.length]);
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const [isTyping, setIsTyping] = useState(false);
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Mark project as read when entering or new messages arrive
+  useEffect(() => {
+    if (!projectId || !user || !activeTab) return;
+    if (activeTab === 'chat' && messages.length > 0) {
+      const updateRead = async () => {
+        try {
+          await updateDoc(doc(db, 'projects', projectId), {
+            [`lastRead.${user.uid}`]: serverTimestamp()
+          });
+        } catch (e) {}
+      };
+      updateRead();
+    }
+  }, [projectId, user, activeTab, messages.length]);
+
+  // Handle typing state
+  useEffect(() => {
+    if (!projectId || !user) return;
+    
+    const typingRef = doc(db, 'projects', projectId, 'typing', user.uid);
+    if (newMessage.trim() && activeTab === 'chat') {
+      setDoc(typingRef, {
+        userId: user.uid,
+        userName: user.displayName || user.email,
+        timestamp: serverTimestamp()
+      });
+    } else {
+      deleteDoc(typingRef);
+    }
+    
+    return () => {
+      deleteDoc(typingRef).catch(() => {});
+    };
+  }, [newMessage, projectId, user, activeTab]);
+
+  // Listen for typing users
+  useEffect(() => {
+    if (!projectId) return;
+    const qTyping = collection(db, 'projects', projectId, 'typing');
+    const unsubTyping = onSnapshot(qTyping, (snapshot) => {
+      const users = snapshot.docs
+        .map(doc => doc.data())
+        .filter(d => d.userId !== user?.uid)
+        .map(d => d.userName) as string[];
+      setTypingUsers(users);
+    });
+    return () => unsubTyping();
+  }, [projectId, user]);
+
+  const handleReaction = async (messageId: string, emoji: string) => {
+    if (!projectId || !user) return;
+    const msgRef = doc(db, 'projects', projectId, 'messages', messageId);
+    const msg = messages.find(m => m.id === messageId);
+    if (!msg) return;
+
+    const reactions = msg.reactions || {};
+    const users = reactions[emoji] || [];
+    
+    let newUsers;
+    if (users.includes(user.uid)) {
+      newUsers = users.filter(id => id !== user.uid);
+    } else {
+      newUsers = [...users, user.uid];
+    }
+
+    const updatedReactions = { ...reactions };
+    if (newUsers.length > 0) {
+      updatedReactions[emoji] = newUsers;
+    } else {
+      delete updatedReactions[emoji];
+    }
+
+    await updateDoc(msgRef, { reactions: updatedReactions });
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!projectId || !user || !window.confirm('Erase this message data?')) return;
+    try {
+      await deleteDoc(doc(db, 'projects', projectId, 'messages', messageId));
+    } catch (e) {
+      toast.error('Failed to erase record');
+    }
+  };
+
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!newMessage.trim() || !projectId || !user || isSendingMessage) return;
+    if (project?.status === 'archived') {
+      toast.error('Project is archived and read-only.');
+      return;
+    }
 
     const text = newMessage;
+    const reply = replyingTo;
     setNewMessage('');
+    setReplyingTo(null);
     setIsSendingMessage(true);
 
     try {
@@ -164,23 +322,40 @@ export default function ProjectDetail() {
         senderId: user.uid,
         senderName: user.displayName || user.email,
         text,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        replyTo: reply ? {
+          messageId: reply.id,
+          senderName: reply.senderName,
+          text: reply.text
+        } : null
       });
       
       logActivity({
         type: 'message_sent',
-        title: `Sent a message in ${project?.title}`
+        title: `Broadcast in ${project?.title}`
       });
     } catch (error) {
-      toast.error('Failed to send message');
-      setNewMessage(text); // Restore message on failure
+      toast.error('Signal transmission failed');
+      setNewMessage(text);
+      setReplyingTo(reply);
     } finally {
       setIsSendingMessage(false);
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
   const handleCreateDoc = async () => {
     if (!projectId || !user || isCreatingDoc) return;
+    if (project?.status === 'archived') {
+      toast.error('Project is archived and read-only.');
+      return;
+    }
     setIsCreatingDoc(true);
     try {
       const docRef = await addDoc(collection(db, 'projects', projectId, 'documents'), {
@@ -192,17 +367,7 @@ export default function ProjectDetail() {
         updatedAt: serverTimestamp()
       });
       
-      const newDoc = { 
-        id: docRef.id, 
-        title: 'Untitled Document', 
-        content: '', 
-        createdBy: user.uid, 
-        createdAt: new Date(), 
-        updatedAt: new Date(), 
-        type: 'markdown' as const 
-      };
-      
-      setActiveDoc(newDoc);
+      setActiveDocId(docRef.id);
       toast.success('Document created');
     } catch (error) {
       toast.error('Failed to create document');
@@ -214,36 +379,94 @@ export default function ProjectDetail() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !projectId || !user || isUploading) return;
+    if (project?.status === 'archived') {
+      toast.error('Project is archived and read-only.');
+      return;
+    }
+
+    // 10MB limit for ghostlink
+    const MAX_SIZE = 10 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      toast.error('File exceeds 10MB neural limit.');
+      return;
+    }
 
     setIsUploading(true);
+    setUploadProgress(0);
+    
     try {
-      console.log("[ProjectDetail] Starting file upload:", file.name);
-      const storageRef = ref(storage, `projects/${projectId}/docs/${Date.now()}_${file.name}`);
-      const snapshot = await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(snapshot.ref);
+      const storagePath = `projects/${projectId}/docs/${Date.now()}_${file.name}`;
+      const storageRef = ref(storage, storagePath);
+      
+      const metadata = {
+        customMetadata: {
+          'uploader': user.uid,
+          'projectId': projectId
+        }
+      };
 
-      await addDoc(collection(db, 'projects', projectId, 'documents'), {
-        title: file.name,
-        fileName: file.name,
-        fileUrl: url,
-        type: 'file',
-        createdBy: user.uid,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
+      const uploadTask = uploadBytesResumable(storageRef, file, metadata);
+      setActiveUploadTask(uploadTask);
 
-      await logActivity({
-        type: 'file_uploaded',
-        title: `Uploaded asset: ${file.name}`
-      });
+      uploadTask.on('state_changed', 
+        (snapshot: UploadTaskSnapshot) => {
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          setUploadProgress(progress);
+        }, 
+        (error) => {
+          console.error("Upload stream error:", error);
+          setIsUploading(false);
+          setActiveUploadTask(null);
+          toast.error("Transmission interrupted.");
+        }, 
+        async () => {
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          
+          const docData = {
+            title: file.name,
+            fileName: file.name,
+            fileUrl: downloadURL,
+            storagePath: storagePath,
+            size: file.size,
+            mimeType: file.type,
+            type: 'file',
+            createdBy: user.uid,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          };
 
-      toast.success('File uploaded and indexed');
+          const docRef = await addDoc(collection(db, 'projects', projectId, 'documents'), docData);
+          
+          await logActivity({
+            type: 'file_uploaded',
+            title: `Asset "${file.name}" synchronized`,
+            projectId: projectId,
+            targetId: docRef.id
+          });
+
+          toast.success('Asset synced successfully');
+          setIsUploading(false);
+          setUploadProgress(0);
+          setActiveUploadTask(null);
+        }
+      );
+
     } catch (error: any) {
-      console.error("[ProjectDetail] Upload error:", error);
-      toast.error('Failed to upload asset');
-    } finally {
+      console.error("[ProjectDetail] Mutation: uploadFile FAILURE", error);
+      toast.error('Nexus rejected the signal.');
       setIsUploading(false);
+    } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleCancelUpload = () => {
+    if (activeUploadTask) {
+      activeUploadTask.cancel();
+      setActiveUploadTask(null);
+      setIsUploading(false);
+      setUploadProgress(0);
+      toast.info('Upload sequence aborted.');
     }
   };
 
@@ -268,7 +491,7 @@ export default function ProjectDetail() {
     setIsDeletingDoc(true);
     try {
       await deleteDoc(doc(db, 'projects', projectId, 'documents', id));
-      if (activeDoc?.id === id) setActiveDoc(null);
+      if (activeDocId === id) setActiveDocId(null);
       toast.success('Document deleted');
     } catch (error) {
       toast.error('Failed to delete document');
@@ -298,58 +521,58 @@ export default function ProjectDetail() {
   };
 
   if (isLoading) return (
-    <div className="h-full flex items-center justify-center bg-[#020306]">
-      <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+    <div className="h-full flex items-center justify-center bg-app-bg">
+      <Loader2 className="w-8 h-8 text-app-primary animate-spin" />
     </div>
   );
 
   if (!project) return null;
 
   return (
-    <div className="h-full flex flex-col bg-[#020306]">
+    <div className="h-full flex flex-col bg-app-bg text-app-foreground">
       {/* Project Header */}
-      <div className="px-8 py-6 border-b border-white/5 flex items-center justify-between">
+      <div className="px-8 py-6 border-b border-app-border flex items-center justify-between bg-app-card/50 backdrop-blur-sm sticky top-0 z-30">
         <div className="flex items-center gap-6">
-          <button onClick={() => navigate('/dashboard')} className="text-zinc-500 hover:text-white transition-colors">
+          <button onClick={() => navigate('/dashboard')} className="text-app-muted hover:text-app-foreground transition-colors">
             <ChevronLeft size={20} />
           </button>
           <div>
-            <h1 className="text-xl font-bold text-white tracking-tight">{project.title}</h1>
+            <h1 className="text-xl font-bold text-app-foreground tracking-tight">{project.title}</h1>
             <div className="flex items-center gap-4 mt-1">
               <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                project.status === 'active' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' : 'bg-zinc-800 text-zinc-500 border-white/5'
+                project.status === 'active' ? 'bg-app-primary/10 text-app-primary border-app-primary/20' : 'bg-app-muted-bg text-app-muted border-app-border'
               } uppercase tracking-widest`}>
                 {project.status}
               </span>
-              <span className="text-[10px] text-zinc-600 font-bold uppercase tracking-widest flex items-center gap-1.5">
+              <span className="text-[10px] text-app-muted font-bold uppercase tracking-widest flex items-center gap-1.5">
                 <Users size={10} /> {project.collaborators?.length || 0} Members
               </span>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 p-1 bg-white/[0.03] border border-white/5 rounded-xl">
+        <div className="flex items-center gap-2 p-1 bg-app-muted-bg/50 border border-app-border rounded-xl">
           <button 
             onClick={() => setActiveTab('overview')}
-            className={`px-4 py-2 rounded-lg text-[10px] font-bold transition-all flex items-center gap-2 ${activeTab === 'overview' ? 'bg-white/5 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+            className={`px-4 py-2 rounded-lg text-[10px] font-bold transition-all flex items-center gap-2 ${activeTab === 'overview' ? 'bg-app-card text-app-foreground shadow-sm' : 'text-app-muted hover:text-app-foreground'}`}
           >
             <Info size={14} /> OVERVIEW
           </button>
           <button 
             onClick={() => setActiveTab('chat')}
-            className={`px-4 py-2 rounded-lg text-[10px] font-bold transition-all flex items-center gap-2 ${activeTab === 'chat' ? 'bg-white/5 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+            className={`px-4 py-2 rounded-lg text-[10px] font-bold transition-all flex items-center gap-2 ${activeTab === 'chat' ? 'bg-app-card text-app-foreground shadow-sm' : 'text-app-muted hover:text-app-foreground'}`}
           >
             <MessageSquare size={14} /> CHAT
           </button>
           <button 
             onClick={() => setActiveTab('docs')}
-            className={`px-4 py-2 rounded-lg text-[10px] font-bold transition-all flex items-center gap-2 ${activeTab === 'docs' ? 'bg-white/5 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+            className={`px-4 py-2 rounded-lg text-[10px] font-bold transition-all flex items-center gap-2 ${activeTab === 'docs' ? 'bg-app-card text-app-foreground shadow-sm' : 'text-app-muted hover:text-app-foreground'}`}
           >
             <FileText size={14} /> DOCS
           </button>
           <button 
             onClick={() => setActiveTab('settings')}
-            className={`px-4 py-2 rounded-lg text-[10px] font-bold transition-all flex items-center gap-2 ${activeTab === 'settings' ? 'bg-white/5 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+            className={`px-4 py-2 rounded-lg text-[10px] font-bold transition-all flex items-center gap-2 ${activeTab === 'settings' ? 'bg-app-card text-app-foreground shadow-sm' : 'text-app-muted hover:text-app-foreground'}`}
           >
             <SettingsIcon size={14} /> SETTINGS
           </button>
@@ -369,60 +592,90 @@ export default function ProjectDetail() {
             >
               <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
                 <div className="md:col-span-2 space-y-8">
-                  <div className="bg-[#0A0B0E] border border-white/5 p-8 rounded-2xl">
-                    <h3 className="text-sm font-bold text-white uppercase tracking-widest mb-4">Description</h3>
-                    <p className="text-zinc-400 text-sm leading-relaxed">{project.description || 'No description provided.'}</p>
+                  <div className="bg-app-card border border-app-border p-8 rounded-2xl shadow-sm">
+                    <h3 className="text-sm font-bold text-app-foreground uppercase tracking-widest mb-4">Description</h3>
+                    <p className="text-app-muted text-sm leading-relaxed">{project.description || 'No description provided.'}</p>
                   </div>
 
-                  <div className="bg-[#0A0B0E] border border-white/5 p-8 rounded-2xl">
-                    <h3 className="text-sm font-bold text-white uppercase tracking-widest mb-6">Recent Messages</h3>
-                    <div className="space-y-4">
-                      {messages.slice(-3).map(m => (
-                        <div key={m.id} className="flex gap-4">
-                          <div className="w-8 h-8 rounded bg-white/5 flex items-center justify-center text-[10px] font-bold text-zinc-500 uppercase">{m.senderName[0]}</div>
-                          <div>
-                            <div className="text-xs font-semibold text-white">{m.senderName}</div>
-                            <p className="text-xs text-zinc-500 mt-0.5">{m.text}</p>
+                  <div className="bg-app-card border border-app-border p-8 rounded-2xl shadow-sm">
+                    <h3 className="text-sm font-bold text-app-foreground uppercase tracking-widest mb-6 flex items-center gap-2">
+                       <Activity size={16} className="text-app-primary" /> Activity Timeline
+                    </h3>
+                    <div className="space-y-6 relative before:absolute before:left-[15px] before:top-2 before:bottom-2 before:w-px before:bg-app-border">
+                      {activities.filter(a => a.projectId === projectId).slice(0, 5).map(a => (
+                        <div key={a.id} className="flex gap-4 relative">
+                          <div className="w-8 h-8 rounded-full bg-app-card border border-app-border flex items-center justify-center relative z-10 text-app-primary">
+                             {a.type.includes('message') ? <MessageSquare size={14} /> : 
+                              a.type.includes('doc') ? <FileText size={14} /> : 
+                              a.type.includes('file') ? <Upload size={14} /> :
+                              <Activity size={14} />}
+                          </div>
+                          <div className="min-w-0 pt-1">
+                            <p className="text-sm font-semibold text-app-foreground leading-tight">{a.title}</p>
+                            <p className="text-[10px] font-bold text-app-muted uppercase tracking-tighter mt-1">{a.time || 'Synched'}</p>
                           </div>
                         </div>
                       ))}
-                      {messages.length === 0 && <p className="text-xs text-zinc-600 italic">No messages yet.</p>}
+                      {activities.filter(a => a.projectId === projectId).length === 0 && <p className="text-xs text-app-muted italic pl-4">No neural activity recorded in this sector.</p>}
+                    </div>
+                  </div>
+
+                  <div className="bg-app-card border border-app-border p-8 rounded-2xl shadow-sm">
+                    <h3 className="text-sm font-bold text-app-foreground uppercase tracking-widest mb-6">Recent Messages</h3>
+                    <div className="space-y-4">
+                      {messages.slice(-3).map(m => (
+                        <div key={m.id} className="flex gap-4">
+                          <div className="w-8 h-8 rounded bg-app-muted-bg border border-app-border flex items-center justify-center text-[10px] font-bold text-app-muted uppercase font-mono">{m.senderName[0]}</div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-app-foreground">{m.senderName}</div>
+                            <p className="text-xs text-app-muted mt-0.5 truncate">{m.text}</p>
+                          </div>
+                        </div>
+                      ))}
+                      {messages.length === 0 && <p className="text-xs text-app-muted italic">No messages yet.</p>}
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-6">
-                  <div className="bg-[#0A0B0E] border border-white/5 p-6 rounded-2xl">
-                     <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-4 italic">Management</h3>
+                  <div className="bg-app-card border border-app-border p-6 rounded-2xl shadow-sm">
+                     <h3 className="text-[10px] font-bold text-app-muted uppercase tracking-widest mb-4 italic">Management</h3>
                      <div className="space-y-2">
                         <button 
                           onClick={() => setIsTeamModalOpen(true)}
-                          className="w-full py-2.5 bg-white/[0.03] border border-white/5 rounded-lg text-xs font-bold text-zinc-400 hover:text-white transition-all flex items-center justify-center gap-2"
+                          className="w-full py-2.5 bg-app-accent border border-app-border rounded-lg text-xs font-bold text-app-foreground hover:bg-app-muted-bg transition-all flex items-center justify-center gap-2 shadow-sm"
                         >
                           <UserPlus size={14} /> Invite Members
                         </button>
                         <button 
                           onClick={() => setActiveTab('chat')}
-                          className="w-full py-2.5 bg-indigo-600 border border-white/5 rounded-lg text-xs font-bold text-white hover:bg-indigo-500 transition-all flex items-center justify-center gap-2"
+                          className="w-full py-2.5 bg-app-primary border border-app-primary/20 rounded-lg text-xs font-bold text-white hover:bg-indigo-500 transition-all flex items-center justify-center gap-2 shadow-sm"
                         >
                           <MessageSquare size={14} /> Team Discussion
                         </button>
                      </div>
                   </div>
 
-                  <div className="bg-[#0A0B0E] border border-white/5 p-6 rounded-2xl">
-                     <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-4">Team Members</h3>
+                  <div className="bg-app-card border border-app-border p-6 rounded-2xl shadow-sm">
+                     <h3 className="text-[10px] font-bold text-app-muted uppercase tracking-widest mb-4">Team Members</h3>
                      <div className="space-y-3">
                         {project.collaborators?.map(uid => {
                           const member = getCollaboratorData(uid);
+                          const isOnline = member.status === 'online';
                           return (
                             <div key={uid} className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-500 uppercase">
+                              <div className="w-8 h-8 rounded-lg bg-app-muted-bg border border-app-border flex items-center justify-center text-[10px] font-bold text-app-muted uppercase font-mono relative">
                                 {member.displayName?.[0] || member.email?.[0]}
+                                {isOnline && (
+                                  <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 border-2 border-app-card rounded-full shadow-sm" />
+                                )}
                               </div>
                               <div className="min-w-0">
-                                <div className="text-xs font-semibold text-white truncate">{member.displayName || member.email}</div>
-                                <div className="text-[9px] font-bold text-zinc-600 uppercase tracking-tighter">{uid === project.ownerId ? 'Owner' : 'Collaborator'}</div>
+                                <div className="text-xs font-semibold text-app-foreground truncate flex items-center gap-2">
+                                  {member.displayName || member.email}
+                                  {isOnline && <span className="text-[8px] font-bold text-emerald-500 uppercase tracking-widest opacity-80 animate-pulse">Live</span>}
+                                </div>
+                                <div className="text-[9px] font-bold text-app-muted uppercase tracking-tighter">{uid === project.ownerId ? 'Owner' : 'Collaborator'}</div>
                               </div>
                             </div>
                           );
@@ -440,36 +693,164 @@ export default function ProjectDetail() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 flex flex-col"
+              className="absolute inset-0 flex flex-col bg-app-bg"
             >
               <div className="flex-1 overflow-y-auto p-8 space-y-6">
-                {messages.map((m) => (
-                  <div key={m.id} className={`flex gap-4 ${m.senderId === user.uid ? 'flex-row-reverse' : ''}`}>
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-xs ${m.senderId === user.uid ? 'bg-indigo-600 text-white' : 'bg-zinc-800 text-zinc-500'}`}>
-                      {m.senderName[0]}
-                    </div>
-                    <div className={`max-w-md ${m.senderId === user.uid ? 'text-right' : ''}`}>
-                      <div className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest mb-1">{m.senderName}</div>
-                      <div className={`p-4 rounded-2xl text-sm leading-relaxed ${m.senderId === user.uid ? 'bg-indigo-600 text-white' : 'bg-white/5 text-zinc-300'}`}>
-                        {m.text}
+                {messages.map((m, index) => {
+                  const member = getCollaboratorData(m.senderId);
+                  const isOnline = member.status === 'online';
+                  const isMe = m.senderId === user.uid;
+                  const prevMsg = messages[index - 1];
+                  const mTime = m.createdAt?.toMillis?.() || Date.now();
+                  const prevMTime = prevMsg?.createdAt?.toMillis?.() || 0;
+                  const isGrouped = prevMsg && prevMsg.senderId === m.senderId && (mTime - prevMTime) < 300000;
+                  
+                  return (
+                    <div key={m.id} className={`flex gap-4 ${isMe ? 'flex-row-reverse' : ''} ${isGrouped ? '-mt-4' : ''}`}>
+                      <div className={`w-10 h-10 rounded-lg flex-shrink-0 border border-app-border flex items-center justify-center font-bold text-sm shadow-sm relative transition-all ${isMe ? 'bg-app-primary text-white border-app-primary/20' : 'bg-app-card text-app-muted'} ${isGrouped ? 'opacity-0 scale-75 -translate-y-2' : ''}`}>
+                        {m.senderName[0]}
+                        {isOnline && !isMe && (
+                          <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-app-card rounded-full shadow-lg" />
+                        )}
+                      </div>
+                      
+                      <div className={`max-w-[70%] group/msg relative ${isMe ? 'text-right' : ''}`}>
+                        {!isGrouped && (
+                          <div className={`text-[10px] font-bold text-app-muted uppercase tracking-widest mb-1.5 flex items-center gap-2 ${isMe ? 'justify-end' : ''}`}>
+                            {m.senderName}
+                            <span className="opacity-40 font-mono">
+                              {m.createdAt?.toMillis ? new Date(m.createdAt.toMillis()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                            </span>
+                            {isOnline && !isMe && <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />}
+                          </div>
+                        )}
+
+                        {m.replyTo && (
+                          <div className={`mb-1 p-2 rounded-lg bg-app-muted-bg border-l-2 border-app-primary/30 text-left text-[10px] opacity-60 max-w-sm inline-block ${isMe ? 'mr-0' : ''}`}>
+                            <div className="font-bold uppercase tracking-tighter text-app-primary">{m.replyTo.senderName}</div>
+                            <div className="truncate">{m.replyTo.text}</div>
+                          </div>
+                        )}
+
+                        <div className="relative">
+                          <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-sm inline-block text-left ${isMe ? 'bg-app-primary text-white rounded-tr-none' : 'bg-app-card border border-app-border text-app-foreground rounded-tl-none'}`}>
+                            {m.text}
+                          </div>
+
+                          {/* Message Actions */}
+                          <div className={`absolute top-0 opacity-0 group-hover/msg:opacity-100 transition-all flex items-center gap-1 p-1 bg-app-card border border-app-border rounded-lg shadow-xl z-10 ${isMe ? 'right-full mr-2' : 'left-full ml-2'}`}>
+                            <button 
+                              onClick={() => setReplyingTo(m)}
+                              className="p-1.5 text-app-muted hover:text-app-foreground hover:bg-app-muted-bg rounded transition-all"
+                              title="Reply"
+                            >
+                              <Reply size={14} />
+                            </button>
+                            <button 
+                              onClick={() => handleReaction(m.id, '👍')}
+                              className="p-1.5 text-app-muted hover:text-app-foreground hover:bg-app-muted-bg rounded transition-all"
+                            >
+                              <Smile size={14} />
+                            </button>
+                            {isMe && (
+                              <button 
+                                onClick={() => handleDeleteMessage(m.id)}
+                                className="p-1.5 text-app-muted hover:text-red-500 hover:bg-red-500/10 rounded transition-all"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Reactions and Seen Status */}
+                        <div className={`flex items-center gap-3 mt-1.5 ${isMe ? 'flex-row-reverse' : ''}`}>
+                          {m.reactions && Object.keys(m.reactions).length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {Object.entries(m.reactions).map(([emoji, uids]) => (
+                                <button 
+                                  key={emoji}
+                                  onClick={() => handleReaction(m.id, emoji)}
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition-all flex items-center gap-1 ${uids.includes(user!.uid) ? 'bg-app-primary/20 border-app-primary text-app-primary shadow-inner' : 'bg-app-card border-app-border text-app-muted hover:border-app-muted'}`}
+                                >
+                                  <span>{emoji}</span>
+                                  <span>{uids.length}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
+                          {isMe && m.createdAt && (
+                            <div className="flex items-center gap-1">
+                              {(() => {
+                                const readBy = project.collaborators?.filter(uid => 
+                                  uid !== user!.uid && 
+                                  project.lastRead?.[uid] && 
+                                  project.lastRead[uid].toMillis() >= m.createdAt.toMillis()
+                                ) || [];
+                                
+                                if (readBy.length > 0) {
+                                  return (
+                                    <div className="flex items-center gap-1 text-emerald-500" title={`Read by: ${readBy.length} member(s)`}>
+                                      <CheckCheck size={12} className="stroke-[3]" />
+                                      <span className="text-[8px] font-bold uppercase tracking-widest opacity-60">Seen {readBy.length > 1 ? `by ${readBy.length}` : ''}</span>
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <span title="Delivered to Nexus">
+                                    <Check size={12} className="text-app-muted opacity-40" />
+                                  </span>
+                                );
+                              })()}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
+                  );
+                })}
+                
+                {typingUsers.length > 0 && (
+                  <div className="flex items-center gap-2 text-[10px] text-app-muted font-bold uppercase tracking-widest animate-pulse ml-14">
+                    <div className="flex gap-1">
+                      <span className="w-1.5 h-1.5 bg-app-primary rounded-full animate-bounce" style={{ animationDelay: '0s' }} />
+                      <span className="w-1.5 h-1.5 bg-app-primary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
+                      <span className="w-1.5 h-1.5 bg-app-primary rounded-full animate-bounce" style={{ animationDelay: '0.4s' }} />
+                    </div>
+                    <span>{typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...</span>
                   </div>
-                ))}
+                )}
                 <div ref={messagesEndRef} />
               </div>
+
+              {replyingTo && (
+                <div className="mx-8 mb-0 p-4 bg-app-accent/30 border-t border-x border-app-border rounded-t-2xl flex items-center justify-between animate-in slide-in-from-bottom-2">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <Reply size={14} className="text-app-primary flex-shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-extrabold text-app-primary uppercase tracking-[0.2em] mb-0.5">Replying to {replyingTo.senderName}</div>
+                      <div className="text-xs text-app-muted truncate opacity-80">{replyingTo.text}</div>
+                    </div>
+                  </div>
+                  <button onClick={() => setReplyingTo(null)} className="p-1.5 text-app-muted hover:text-app-foreground hover:bg-app-muted-bg rounded-lg transition-all">
+                    <X size={18} />
+                  </button>
+                </div>
+              )}
               
-              <div className="p-6 bg-[#0A0B0E] border-t border-white/5">
-                <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto relative">
+              <div className="p-6 bg-app-card border-t border-app-border shadow-2xl relative z-10">
+                <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto relative group">
                   <input 
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
+                    onKeyDown={handleKeyDown}
                     placeholder="Type a message..."
-                    className="w-full bg-white/5 border border-white/10 rounded-xl pl-6 pr-16 py-4 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all"
+                    className="w-full bg-app-muted-bg border border-app-border rounded-xl pl-6 pr-16 py-4 text-sm text-app-foreground focus:outline-none focus:ring-2 focus:ring-app-primary/20 focus:border-app-primary/40 transition-all placeholder:text-app-muted"
                   />
                   <button 
                     type="submit"
-                    className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-white text-black rounded-lg flex items-center justify-center hover:bg-zinc-200 transition-all"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-app-foreground text-app-bg rounded-lg flex items-center justify-center hover:bg-app-muted transition-all active:scale-95 shadow-lg"
                   >
                     <Send size={18} />
                   </button>
@@ -486,51 +867,77 @@ export default function ProjectDetail() {
               exit={{ opacity: 0 }}
               className="absolute inset-0 flex"
             >
-              <div className="w-72 border-r border-white/5 p-6 space-y-6 flex flex-col bg-[#0A0B0E]">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Workspace Assets</h3>
-                  <div className="flex items-center gap-1">
-                    <button 
-                      onClick={() => fileInputRef.current?.click()} 
-                      disabled={isUploading}
-                      className="text-zinc-500 hover:text-white transition-colors"
-                      title="Upload File"
-                    >
-                      {isUploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-                    </button>
-                    <button 
-                      onClick={handleCreateDoc} 
-                      disabled={isCreatingDoc}
-                      className="text-zinc-500 hover:text-white transition-colors"
-                      title="Create Document"
-                    >
-                      {isCreatingDoc ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-                    </button>
-                    <input 
-                      type="file" 
-                      ref={fileInputRef} 
-                      onChange={handleFileUpload} 
-                      className="hidden" 
-                    />
+              <div className="w-72 border-r border-app-border p-6 space-y-6 flex flex-col bg-app-card overflow-y-auto">
+                <div className="flex flex-col gap-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-[10px] font-bold text-app-muted uppercase tracking-widest">Workspace Assets</h3>
+                    <div className="flex items-center gap-1">
+                      <button 
+                        onClick={() => fileInputRef.current?.click()} 
+                        disabled={isUploading}
+                        className="p-1.5 text-app-muted hover:text-app-foreground hover:bg-app-muted-bg rounded-md transition-all"
+                        title="Upload File"
+                      >
+                        {isUploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                      </button>
+                      <button 
+                        onClick={handleCreateDoc} 
+                        disabled={isCreatingDoc}
+                        className="p-1.5 text-app-muted hover:text-app-foreground hover:bg-app-muted-bg rounded-md transition-all"
+                        title="Create Document"
+                      >
+                        {isCreatingDoc ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                      </button>
+                      <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        onChange={handleFileUpload} 
+                        className="hidden" 
+                      />
+                    </div>
                   </div>
+
+                  {isUploading && (
+                    <div className="p-3 bg-app-accent/20 border border-app-primary/20 rounded-xl space-y-2 animate-in fade-in slide-in-from-top-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-bold text-app-primary uppercase tracking-widest flex items-center gap-2">
+                          <Activity size={10} className="animate-pulse" /> Syncing...
+                        </span>
+                        <button 
+                          onClick={handleCancelUpload}
+                          className="p-1 text-app-muted hover:text-red-500 hover:bg-red-500/10 rounded transition-all"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                      <div className="h-1 bg-app-muted-bg rounded-full overflow-hidden">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${uploadProgress}%` }}
+                          className="h-full bg-app-primary"
+                        />
+                      </div>
+                      <div className="text-[8px] font-mono text-app-muted text-right uppercase">{Math.round(uploadProgress)}% Complete</div>
+                    </div>
+                  )}
                 </div>
 
-                <div className="space-y-4 flex-1 overflow-y-auto">
+                <div className="space-y-4 flex-1">
                   <div>
-                    <h4 className="text-[9px] font-bold text-zinc-600 uppercase tracking-[0.2em] mb-3 ml-2">Documents</h4>
+                    <h4 className="text-[9px] font-bold text-app-muted opacity-50 uppercase tracking-[0.2em] mb-3 ml-2">Documents</h4>
                     <div className="space-y-1">
                         {documents.filter(d => d.type !== 'file').map(d => (
                           <div key={d.id} className="group/item flex items-center gap-1">
                             <button 
-                              onClick={() => setActiveDoc(d)}
-                              className={`flex-1 text-left px-3 py-2.5 rounded-xl text-xs font-medium transition-all flex items-center gap-2.5 ${activeDoc?.id === d.id ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.02] border border-transparent'}`}
+                              onClick={() => setActiveDocId(d.id)}
+                              className={`flex-1 text-left px-3 py-2 rounded-lg text-xs font-medium transition-all flex items-center gap-2.5 ${activeDocId === d.id ? 'bg-app-primary/10 text-app-primary border border-app-primary/20' : 'text-app-muted hover:text-app-foreground hover:bg-app-muted-bg border border-transparent'}`}
                             >
-                              <FileText size={14} className={activeDoc?.id === d.id ? 'text-indigo-400' : 'text-zinc-600'} />
+                              <FileText size={14} className={activeDocId === d.id ? 'text-app-primary' : 'text-app-muted'} />
                               <span className="truncate">{d.title}</span>
                             </button>
                             <button 
                               onClick={(e) => { e.stopPropagation(); handleDeleteDoc(d.id); }}
-                              className="opacity-0 group-hover/item:opacity-100 p-2 text-zinc-600 hover:text-red-500 transition-all"
+                              className="opacity-0 group-hover/item:opacity-100 p-1.5 text-app-muted hover:text-red-500 transition-all"
                             >
                               <Trash2 size={12} />
                             </button>
@@ -540,30 +947,30 @@ export default function ProjectDetail() {
                   </div>
 
                   <div>
-                    <h4 className="text-[9px] font-bold text-zinc-600 uppercase tracking-[0.2em] mb-3 ml-2">Files</h4>
+                    <h4 className="text-[9px] font-bold text-app-muted opacity-50 uppercase tracking-[0.2em] mb-3 ml-2">Files</h4>
                     <div className="space-y-1">
                         {documents.filter(d => d.type === 'file').map(d => (
                           <div 
                             key={d.id}
-                            className="w-full text-left px-3 py-2.5 rounded-xl text-xs font-medium transition-all flex items-center justify-between group/item hover:bg-white/[0.02] border border-transparent"
+                            className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-all flex items-center justify-between group/item hover:bg-app-muted-bg border border-transparent"
                           >
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <File size={14} className="text-zinc-600 flex-shrink-0" />
-                              <span className="truncate text-zinc-500 group-hover/item:text-zinc-300">{d.title}</span>
+                              <File size={14} className="text-app-muted flex-shrink-0" />
+                              <span className="truncate text-app-muted group-hover/item:text-app-foreground">{d.title}</span>
                             </div>
                             <div className="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity">
                               <a 
                                 href={d.fileUrl} 
                                 target="_blank" 
                                 rel="noopener noreferrer" 
-                                className="text-zinc-600 hover:text-indigo-400 transition-colors p-1.5"
+                                className="text-app-muted hover:text-app-primary transition-colors p-1.5 rounded-md hover:bg-app-accent"
                                 title="Download"
                               >
                                 <Download size={14} />
                               </a>
                               <button 
                                 onClick={() => handleDeleteDoc(d.id)}
-                                className="text-zinc-600 hover:text-red-500 transition-colors p-1.5"
+                                className="text-app-muted hover:text-red-500 transition-colors p-1.5 rounded-md hover:bg-red-500/10"
                                 title="Delete"
                               >
                                 <Trash2 size={14} />
@@ -576,57 +983,148 @@ export default function ProjectDetail() {
                 </div>
               </div>
 
-              <div className="flex-1 p-12 overflow-y-auto bg-[#020306]">
+              <div className="flex-1 p-12 overflow-y-auto bg-app-bg selection:bg-app-primary/20">
                 {activeDoc ? (
                   activeDoc.type === 'file' ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center">
-                      <div className="w-20 h-20 rounded-3xl bg-white/[0.02] border border-white/5 flex items-center justify-center mb-8 text-zinc-600">
-                        <FileCode size={40} />
+                    <div className="h-full flex flex-col items-center justify-center text-center max-w-4xl mx-auto py-12">
+                      {activeDoc.mimeType?.startsWith('image/') ? (
+                        <div className="w-full mb-8 relative group">
+                          <img 
+                            src={activeDoc.fileUrl} 
+                            alt={activeDoc.title}
+                            className="w-full max-h-[60vh] object-contain rounded-2xl shadow-premium border border-app-border bg-app-card"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="absolute inset-x-0 bottom-0 p-4 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-b-2xl">
+                             <p className="text-white text-xs font-bold uppercase tracking-widest">{activeDoc.title}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="w-24 h-24 rounded-[2rem] bg-app-card border border-app-border flex items-center justify-center mb-8 text-app-primary shadow-premium">
+                          <FileCode size={40} />
+                        </div>
+                      )}
+                      
+                      <div className="space-y-4">
+                        <h2 className="text-2xl font-bold text-app-foreground tracking-tight">{activeDoc.title}</h2>
+                        <div className="flex items-center justify-center gap-4 text-[10px] font-bold text-app-muted uppercase tracking-widest">
+                          <span className="px-2 py-0.5 rounded border border-app-border bg-app-muted-bg">{activeDoc.mimeType || 'unknown/type'}</span>
+                          <span className="px-2 py-0.5 rounded border border-app-border bg-app-muted-bg">{(activeDoc.size || 0) / 1024 < 1024 ? `${Math.round((activeDoc.size || 0) / 1024)} KB` : `${((activeDoc.size || 0) / (1024 * 1024)).toFixed(1)} MB`}</span>
+                        </div>
+                        <p className="text-app-muted text-sm max-w-sm leading-relaxed">This asset is synchronized with the GhostLink secure vault. You can download it for local processing.</p>
                       </div>
-                      <h2 className="text-2xl font-bold text-white mb-2">{activeDoc.title}</h2>
-                      <p className="text-zinc-500 text-sm mb-8">This is a binary file. You can download it to view the content.</p>
-                      <a 
-                        href={activeDoc.fileUrl} 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        className="px-8 py-3 bg-white text-black font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-zinc-200 transition-all flex items-center gap-2"
-                      >
-                        <Download size={16} /> Download Asset
-                      </a>
+
+                      <div className="mt-10 flex items-center gap-4">
+                        <a 
+                          href={activeDoc.fileUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="px-8 py-3 bg-app-primary text-white font-bold text-[10px] uppercase tracking-widest rounded-xl hover:opacity-90 transition-all flex items-center gap-2 shadow-lg shadow-app-primary/20"
+                        >
+                          <Download size={16} /> Download Asset
+                        </a>
+                      </div>
                     </div>
                   ) : (
                     <div className="max-w-4xl mx-auto space-y-10">
                       <div className="flex items-center justify-between group">
                         <input 
-                          value={activeDoc.title}
-                          onChange={(e) => setActiveDoc({ ...activeDoc, title: e.target.value })}
-                          className="text-5xl font-bold bg-transparent border-none text-white focus:outline-none w-full tracking-tight"
+                          value={localDoc?.title || ''}
+                          onChange={(e) => setLocalDoc(prev => prev ? { ...prev, title: e.target.value } : null)}
+                          className="text-5xl font-bold bg-transparent border-none text-app-foreground focus:outline-none w-full tracking-tighter placeholder:opacity-20"
+                          placeholder="Doc Title"
                         />
-                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          {isSavingDoc && <Loader2 size={16} className="text-zinc-500 animate-spin" />}
-                          <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest whitespace-nowrap">Auto-saving</span>
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                          {isSavingDoc && <Loader2 size={16} className="text-app-muted animate-spin" />}
+                          <span className="text-[10px] font-bold text-app-muted uppercase tracking-widest whitespace-nowrap">Session Active</span>
                         </div>
                       </div>
                       
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
                         <div className="space-y-4">
-                           <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-600 uppercase tracking-widest mb-2">
-                             <FileText size={12} /> Editor
+                           <div className="flex items-center justify-between px-2">
+                             <div className="flex items-center gap-2 text-[10px] font-bold text-app-muted uppercase tracking-widest">
+                               <FileText size={12} /> Source Editor
+                             </div>
+                             <div className="flex items-center gap-1">
+                               {docPresence.length > 0 && (
+                                 <div className="flex -space-x-2 mr-4">
+                                   {docPresence.map(name => (
+                                     <div key={name} className="w-5 h-5 rounded-full bg-app-primary border border-app-card flex items-center justify-center text-[8px] font-black text-white uppercase shadow-sm" title={name}>
+                                       {name[0]}
+                                     </div>
+                                   ))}
+                                   <div className="pl-3 text-[8px] font-bold text-app-primary uppercase tracking-tighter self-center animate-pulse">Editing...</div>
+                                 </div>
+                               )}
+                               <div className="flex items-center gap-1 p-1 bg-app-muted-bg rounded-lg border border-app-border">
+                                 <button 
+                                   onClick={() => {
+                                      const area = document.querySelector('textarea');
+                                      if (area) {
+                                        const start = area.selectionStart;
+                                        const end = area.selectionEnd;
+                                        const text = localDoc?.content || '';
+                                        const before = text.substring(0, start);
+                                        const after = text.substring(end);
+                                        const selected = text.substring(start, end);
+                                        setLocalDoc(prev => prev ? { ...prev, content: `${before}**${selected}**${after}` } : null);
+                                      }
+                                   }}
+                                   className="p-1 text-app-muted hover:text-app-foreground hover:bg-app-card rounded transition-all font-bold text-xs px-2"
+                                 >
+                                   B
+                                 </button>
+                                 <button 
+                                   onClick={() => {
+                                      const area = document.querySelector('textarea');
+                                      if (area) {
+                                        const start = area.selectionStart;
+                                        const end = area.selectionEnd;
+                                        const text = localDoc?.content || '';
+                                        const before = text.substring(0, start);
+                                        const after = text.substring(end);
+                                        const selected = text.substring(start, end);
+                                        setLocalDoc(prev => prev ? { ...prev, content: `${before}_${selected}_${after}` } : null);
+                                      }
+                                   }}
+                                   className="p-1 text-app-muted hover:text-app-foreground hover:bg-app-card rounded transition-all italic text-xs px-2"
+                                 >
+                                   i
+                                 </button>
+                                 <button 
+                                   onClick={() => {
+                                      const area = document.querySelector('textarea');
+                                      if (area) {
+                                        const start = area.selectionStart;
+                                        const end = area.selectionEnd;
+                                        const text = localDoc?.content || '';
+                                        const before = text.substring(0, start);
+                                        const after = text.substring(end);
+                                        setLocalDoc(prev => prev ? { ...prev, content: `${before}\n# ${after}` } : null);
+                                      }
+                                   }}
+                                   className="p-1 text-app-muted hover:text-app-foreground hover:bg-app-card rounded transition-all font-bold text-xs"
+                                 >
+                                   H1
+                                 </button>
+                               </div>
+                             </div>
                            </div>
                            <textarea 
-                             value={activeDoc.content}
-                             onChange={(e) => setActiveDoc({ ...activeDoc, content: e.target.value })}
-                             placeholder="Start writing markdown..."
-                             className="w-full min-h-[60vh] bg-white/[0.02] border border-white/5 rounded-2xl p-8 text-zinc-400 focus:outline-none focus:border-indigo-500/30 resize-none leading-relaxed text-base font-mono transition-all"
+                             value={localDoc?.content || ''}
+                             onChange={(e) => setLocalDoc(prev => prev ? { ...prev, content: e.target.value } : null)}
+                             placeholder="Start typing with markdown..."
+                             className="w-full min-h-[60vh] bg-app-card border border-app-border rounded-2xl p-8 text-app-foreground placeholder:text-app-muted/30 focus:outline-none focus:ring-1 focus:ring-app-primary/20 resize-none leading-relaxed text-base font-mono transition-all shadow-sm"
                            />
                         </div>
                         <div className="space-y-4">
-                           <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-600 uppercase tracking-widest mb-2">
-                             <Search size={12} /> Preview
+                           <div className="flex items-center gap-2 text-[10px] font-bold text-app-muted uppercase tracking-widest mb-2 px-2">
+                             <Search size={12} /> Live Preview
                            </div>
-                           <div className="w-full min-h-[60vh] bg-transparent rounded-2xl prose prose-secondary prose-invert max-w-none">
-                              <div className="markdown-body">
-                                <Markdown>{activeDoc.content || '_No content yet. Start typing in the editor._'}</Markdown>
+                           <div className="w-full min-h-[60vh] bg-app-card/30 border border-app-border border-dashed rounded-2xl p-8 overflow-y-auto">
+                              <div className="markdown-body prose prose-slate dark:prose-invert max-w-none">
+                                <Markdown>{localDoc?.content || '_No content yet. Start typing in the source editor._'}</Markdown>
                               </div>
                            </div>
                         </div>
@@ -635,24 +1133,24 @@ export default function ProjectDetail() {
                   )
                 ) : (
                   <div className="h-full flex flex-col items-center justify-center text-center">
-                    <div className="w-20 h-20 rounded-3xl bg-zinc-900/50 border border-white/5 flex items-center justify-center mb-8 relative">
-                      <div className="absolute inset-0 bg-indigo-500/10 blur-2xl rounded-full" />
-                      <FileText size={32} className="text-zinc-600 relative z-10" />
+                    <div className="w-20 h-20 rounded-3xl bg-app-card border border-app-border flex items-center justify-center mb-8 relative group">
+                      <div className="absolute inset-0 bg-app-primary/5 blur-3xl rounded-full scale-150 group-hover:bg-app-primary/10 transition-colors" />
+                      <FileText size={32} className="text-app-muted relative z-10" />
                     </div>
-                    <h3 className="text-xl font-bold text-white mb-2">Select a Document</h3>
-                    <p className="text-zinc-500 text-sm max-w-xs mx-auto leading-relaxed">
-                      Choose an asset from the sidebar or initialize a new document to begin session.
+                    <h3 className="text-xl font-bold text-app-foreground mb-2 tracking-tight">Select an Asset</h3>
+                    <p className="text-app-muted text-sm max-w-xs mx-auto leading-relaxed">
+                      Choose an existing asset from the sidebar or initialize a new document to begin your workspace session.
                     </p>
                     <div className="flex items-center gap-4 mt-10">
                        <button 
                          onClick={handleCreateDoc}
-                         className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-all uppercase tracking-widest"
+                         className="px-6 py-2.5 bg-app-primary hover:bg-indigo-500 text-white text-[10px] font-bold rounded-xl transition-all uppercase tracking-widest shadow-lg shadow-app-primary/20"
                        >
                          Create Doc
                        </button>
                        <button 
                          onClick={() => fileInputRef.current?.click()}
-                         className="px-6 py-2.5 bg-white/5 hover:bg-white/10 text-white text-xs font-bold rounded-xl border border-white/10 transition-all uppercase tracking-widest"
+                         className="px-6 py-2.5 bg-app-card hover:bg-app-muted-bg text-app-foreground text-[10px] font-bold rounded-xl border border-app-border transition-all uppercase tracking-widest shadow-sm"
                        >
                          Upload File
                        </button>
@@ -662,33 +1160,35 @@ export default function ProjectDetail() {
               </div>
             </motion.div>
           )}
+
           {activeTab === 'settings' && (
             <motion.div 
               key="settings"
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
-              className="p-8 h-full overflow-y-auto"
+              className="p-8 h-full overflow-y-auto bg-app-bg"
             >
               <div className="max-w-2xl mx-auto space-y-12">
                 <section>
-                  <h3 className="text-sm font-bold text-white uppercase tracking-widest mb-6">General Settings</h3>
+                  <h3 className="text-sm font-bold text-app-foreground uppercase tracking-widest mb-6">General Settings</h3>
                   <div className="space-y-4">
-                    <div className="bg-[#0A0B0E] border border-white/5 p-6 rounded-2xl">
-                      <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Project Title</label>
+                    <div className="bg-app-card border border-app-border p-6 rounded-2xl shadow-sm">
+                      <label className="block text-[10px] font-bold text-app-muted uppercase tracking-widest mb-2">Project Title</label>
                       <input 
                         value={project.title}
                         onChange={(e) => updateProject(project.id, { title: e.target.value })}
-                        className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all"
+                        className="w-full bg-app-muted-bg border border-app-border rounded-lg px-4 py-2.5 text-sm text-app-foreground focus:outline-none focus:ring-1 focus:ring-app-primary/30 transition-all font-medium"
                       />
                     </div>
-                    <div className="bg-[#0A0B0E] border border-white/5 p-6 rounded-2xl">
-                      <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Description</label>
+                    <div className="bg-app-card border border-app-border p-6 rounded-2xl shadow-sm">
+                      <label className="block text-[10px] font-bold text-app-muted uppercase tracking-widest mb-2">Description</label>
                       <textarea 
                         value={project.description}
                         onChange={(e) => updateProject(project.id, { description: e.target.value })}
                         rows={4}
-                        className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all resize-none"
+                        className="w-full bg-app-muted-bg border border-app-border rounded-lg px-4 py-2.5 text-sm text-app-foreground focus:outline-none focus:ring-1 focus:ring-app-primary/30 transition-all resize-none font-medium leading-relaxed"
+                        placeholder="Project objectives and notes..."
                       />
                     </div>
                   </div>
@@ -699,21 +1199,21 @@ export default function ProjectDetail() {
                   <div className="bg-red-500/[0.02] border border-red-500/10 p-8 rounded-2xl space-y-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h4 className="text-sm font-bold text-white mb-1">Archive Project</h4>
-                        <p className="text-xs text-zinc-500">Move this project to the archive. It will still be accessible but read-only.</p>
+                        <h4 className="text-sm font-bold text-app-foreground mb-1">Archive Project</h4>
+                        <p className="text-xs text-app-muted">Move this project to the archive. It will still be accessible but read-only.</p>
                       </div>
                       <button 
                         onClick={() => updateProject(project.id, { status: 'archived' }).then(() => toast.success('Project archived'))}
-                        className="px-6 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold rounded-lg transition-all"
+                        className="px-6 py-2 bg-app-muted-bg hover:bg-app-muted text-app-foreground text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest border border-app-border"
                       >
                         Archive
                       </button>
                     </div>
-                    <div className="h-px bg-white/5" />
+                    <div className="h-px bg-app-border" />
                     <div className="flex items-center justify-between">
                       <div>
                         <h4 className="text-sm font-bold text-red-500 mb-1">Delete Project</h4>
-                        <p className="text-xs text-zinc-500">Permanently remove this project and all its data. This action cannot be undone.</p>
+                        <p className="text-xs text-app-muted">Permanently remove this project and all its data. This action cannot be undone.</p>
                       </div>
                       <button 
                         onClick={() => {
@@ -724,7 +1224,7 @@ export default function ProjectDetail() {
                             });
                           }
                         }}
-                        className="px-6 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 text-xs font-bold rounded-lg transition-all"
+                        className="px-6 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-500 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest"
                       >
                         Delete
                       </button>
@@ -752,57 +1252,61 @@ export default function ProjectDetail() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-md bg-[#0A0B0E] border border-white/10 rounded-3xl shadow-2xl overflow-hidden"
+              className="relative w-full max-w-md bg-app-card border border-app-border rounded-3xl shadow-2xl overflow-hidden"
             >
-              <div className="p-8 border-b border-white/5 flex items-center justify-between">
+              <div className="p-8 border-b border-app-border flex items-center justify-between bg-app-accent/50">
                 <div>
-                  <h3 className="text-lg font-bold text-white">Invite Team Members</h3>
-                  <p className="text-xs text-zinc-500 mt-1">Add collaborators to start shipping together.</p>
+                  <h3 className="text-lg font-bold text-app-foreground tracking-tight uppercase">Invite Team</h3>
+                  <p className="text-xs text-app-muted mt-1 font-medium">Provision access to collaborators.</p>
                 </div>
-                <button onClick={() => setIsTeamModalOpen(false)} className="text-zinc-500 hover:text-white transition-colors">
+                <button onClick={() => setIsTeamModalOpen(false)} className="text-app-muted hover:text-app-foreground p-2 rounded-lg hover:bg-app-muted-bg transition-all">
                   <X size={20} />
                 </button>
               </div>
               
               <form onSubmit={handleInvite} className="p-8 space-y-6">
                 <div>
-                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Email Address</label>
+                  <label className="block text-[10px] font-bold text-app-muted uppercase tracking-widest mb-3">Email Address</label>
                   <div className="relative">
                     <input 
                       type="email"
                       value={inviteEmail}
                       onChange={(e) => setInviteEmail(e.target.value)}
-                      placeholder="teammate@example.com"
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all"
+                      placeholder="teammate@ghostlink.io"
+                      className="w-full bg-app-muted-bg border border-app-border rounded-xl px-4 py-3.5 text-sm text-app-foreground focus:outline-none focus:ring-1 focus:ring-app-primary/30 transition-all font-medium"
                       required
                     />
                     <button 
                       type="submit"
                       disabled={isInviting}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 bg-white text-black text-[10px] font-bold px-3 py-1.5 rounded-lg hover:bg-zinc-200 transition-all disabled:opacity-50"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 bg-app-primary text-white text-[10px] font-bold px-4 py-2 rounded-lg hover:bg-indigo-500 transition-all disabled:opacity-50 shadow-lg shadow-app-primary/20"
                     >
-                      {isInviting ? <Loader2 size={12} className="animate-spin" /> : 'INVITE'}
+                      {isInviting ? <Loader2 size={12} className="animate-spin" /> : 'SEND INVITE'}
                     </button>
                   </div>
                 </div>
 
-                <div className="pt-4">
-                  <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-4">Current Team</h4>
-                  <div className="space-y-2">
+                <div className="pt-4 border-t border-app-border">
+                  <h4 className="text-[10px] font-bold text-app-muted uppercase tracking-widest mb-4 opacity-50">Current Operators</h4>
+                  <div className="space-y-2 max-h-[30vh] overflow-y-auto pr-2 scrollbar-hidden">
                     {project.collaborators?.map(uid => {
                       const member = getCollaboratorData(uid);
                       return (
-                        <div key={uid} className="flex items-center justify-between bg-white/[0.02] border border-white/5 p-3 rounded-xl">
+                        <div key={uid} className="flex items-center justify-between bg-app-muted-bg border border-app-border p-3 rounded-xl shadow-sm">
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-500 uppercase">
+                            <div className="w-8 h-8 rounded-lg bg-app-card border border-app-border flex items-center justify-center text-[10px] font-bold text-app-muted uppercase font-mono shadow-sm">
                               {member.displayName?.[0] || member.email?.[0]}
                             </div>
                             <div className="min-w-0">
-                              <div className="text-xs font-semibold text-white truncate">{member.displayName || member.email}</div>
-                              <div className="text-[9px] font-bold text-zinc-600 uppercase tracking-tighter">{uid === project.ownerId ? 'Owner' : 'Collaborator'}</div>
+                              <div className="text-xs font-semibold text-app-foreground truncate">{member.displayName || member.email}</div>
+                              <div className="text-[9px] font-bold text-app-muted uppercase tracking-tighter opacity-70">{uid === project.ownerId ? 'Nexus Owner' : 'Operator'}</div>
                             </div>
                           </div>
-                          {uid === project.ownerId && <Check size={14} className="text-indigo-500" />}
+                          {uid === project.ownerId && (
+                            <div className="w-6 h-6 rounded-full bg-indigo-500/10 flex items-center justify-center">
+                              <Check size={12} className="text-app-primary" />
+                            </div>
+                          )}
                         </div>
                       );
                     })}

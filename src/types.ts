@@ -4,9 +4,26 @@ export type Message = {
   senderName: string;
   text: string;
   createdAt: any; // Timestamp
+  updatedAt?: any;
+  edited?: boolean;
+  replyTo?: {
+    messageId: string;
+    senderName: string;
+    text: string;
+  };
+  reactions?: Record<string, string[]>; // emoji -> [userIds]
 };
 
 export type ProjectStatus = 'active' | 'planned' | 'archived' | 'completed';
+
+export type UserProfile = {
+  id: string;
+  displayName?: string;
+  email: string;
+  photoURL?: string;
+  status?: 'online' | 'offline';
+  lastActive?: any;
+};
 
 export type Project = {
   id: string;
@@ -17,6 +34,7 @@ export type Project = {
   description?: string;
   createdAt: any;
   updatedAt: any;
+  lastRead?: Record<string, any>; // userId -> timestamp
 };
 
 export type Document = {
@@ -29,6 +47,8 @@ export type Document = {
   type?: 'markdown' | 'file';
   fileUrl?: string;
   fileName?: string;
+  mimeType?: string;
+  size?: number;
 };
 
 export type ActivityType = 'project_created' | 'message_sent' | 'doc_updated' | 'member_added' | 'file_uploaded';
@@ -39,6 +59,8 @@ export type Activity = {
   actorId: string;
   actorName: string;
   title: string;
+  projectId?: string;
+  targetId?: string;
   time?: string; // For display
   timestamp: any;
 };

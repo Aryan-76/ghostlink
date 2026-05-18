@@ -27,8 +27,11 @@ const queryClient = new QueryClient({
 });
 
 const PageLoader = () => (
-  <div className="h-screen w-full flex items-center justify-center bg-[#020306]">
-    <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+  <div className="h-screen w-full flex flex-col items-center justify-center bg-app-bg">
+    <div className="w-16 h-16 rounded-2xl bg-app-primary/10 border border-app-primary/20 flex items-center justify-center mb-6">
+      <Loader2 className="w-8 h-8 text-app-primary animate-spin" />
+    </div>
+    <span className="text-[10px] font-bold text-app-muted uppercase tracking-[0.3em] animate-pulse">GhostLink Node Initializing...</span>
   </div>
 );
 

@@ -6,25 +6,94 @@
   --font-display: "Geist", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
-  --color-workspace-bg: #020306;
-  --color-workspace-card: #0a0c12;
-  --color-workspace-border: rgba(255, 255, 255, 0.05);
+  /* Semantic Color Aliases */
+  --color-app-bg: var(--background);
+  --color-app-foreground: var(--foreground);
+  --color-app-card: var(--card);
+  --color-app-border: var(--border);
+  --color-app-muted: var(--muted);
+  --color-app-muted-bg: var(--muted-foreground);
+  --color-app-primary: var(--primary);
+  --color-app-accent: var(--accent);
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #020617;
+  --card: #ffffff;
+  --border: #e2e8f0;
+  --muted: #64748b;
+  --muted-foreground: #f1f5f9;
+  --primary: #4f46e5;
+  --accent: #f8fafc;
+  
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+}
+
+[data-theme="dark"] {
+  --background: #020306;
+  --foreground: #f8fafc;
+  --card: #0a0b12;
+  --border: rgba(255, 255, 255, 0.06);
+  --muted: #64748b;
+  --muted-foreground: rgba(255, 255, 255, 0.02);
+  --primary: #818cf8;
+  --accent: rgba(99, 102, 241, 0.05);
 }
 
 @layer base {
+  * {
+    @apply border-app-border;
+  }
+  
   body {
-    @apply bg-workspace-bg text-zinc-400 antialiased font-sans;
+    @apply bg-app-bg text-app-foreground antialiased font-sans transition-colors duration-500 selection:bg-app-primary/20 selection:text-app-primary;
   }
   
   h1, h2, h3, h4, h5, h6 {
-    @apply font-display tracking-tight text-white;
+    @apply font-display tracking-tight text-app-foreground;
   }
 }
 
 .glass-panel {
-  @apply bg-white/[0.02] backdrop-blur-md border border-workspace-border;
+  @apply bg-app-card/60 backdrop-blur-xl border border-app-border;
+}
+
+.neo-blur {
+  @apply backdrop-blur-[20px] bg-app-bg/80;
+}
+
+.shadow-premium {
+  box-shadow: 0 0 0 1px var(--border), 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1);
 }
 
 .scrollbar-hidden::-webkit-scrollbar {
   display: none;
+}
+
+.animate-pulse-slow {
+  animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .5; }
+}
+
+.nexus-gradient {
+  background: radial-gradient(circle at top right, var(--primary), transparent),
+              radial-gradient(circle at bottom left, #4f46e5, transparent);
+  opacity: 0.1;
+}
+
+/* Custom Markdown styling for themes */
+.markdown-body {
+  @apply text-app-foreground leading-relaxed;
+}
+.markdown-body h1, .markdown-body h2, .markdown-body h3 {
+  @apply text-app-foreground mt-6 mb-4;
+}
+.markdown-body p {
+  @apply mb-4;
 }

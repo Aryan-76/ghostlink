@@ -32,36 +32,38 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
     if (hasError) {
       return (
-        <div className="min-h-screen bg-[#020306] flex items-center justify-center p-8">
+        <div className="min-h-screen bg-app-bg flex items-center justify-center p-8">
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="max-w-md w-full bg-[#0A0B0E] border border-white/5 rounded-2xl p-8 text-center space-y-6 shadow-2xl"
+            className="max-w-md w-full bg-app-card border border-app-border rounded-3xl p-10 text-center space-y-8 shadow-2xl relative overflow-hidden"
           >
-            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto">
-              <AlertTriangle className="text-red-500" size={32} />
+            <div className="absolute top-0 left-0 w-full h-1 bg-red-500 opacity-50" />
+            
+            <div className="w-20 h-20 bg-red-500/10 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+              <AlertTriangle className="text-red-500" size={40} />
             </div>
             
-            <div className="space-y-2">
-              <h1 className="text-xl font-bold text-white tracking-tight">Something went wrong</h1>
-              <p className="text-sm text-zinc-500 leading-relaxed">
-                The application encountered an unexpected error. Please try refreshing the page.
+            <div className="space-y-3">
+              <h1 className="text-2xl font-bold text-app-foreground tracking-tight">Signal Interrupted</h1>
+              <p className="text-sm text-app-muted font-medium leading-relaxed opacity-70">
+                The secure communication channel has encountered a critical fault. Protocol re-initialization recommended.
               </p>
             </div>
 
-            <div className="p-4 bg-white/[0.02] border border-white/5 rounded-xl text-left">
-              <p className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest mb-1">Error Details</p>
-              <p className="text-[11px] font-mono text-red-400/80 line-clamp-3">
-                {error?.message || 'An unexpected error occurred'}
+            <div className="p-5 bg-app-muted-bg border border-app-border rounded-2xl text-left shadow-inner">
+              <p className="text-[10px] font-bold text-app-muted uppercase tracking-[0.2em] mb-2 opacity-50">Fault Telemetry</p>
+              <p className="text-xs font-mono text-red-500/80 break-words leading-relaxed">
+                {error?.message || 'CRITICAL_FAULT_UNSPECIFIED'}
               </p>
             </div>
 
             <button 
               onClick={() => window.location.reload()}
-              className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-indigo-500 transition-all flex items-center justify-center gap-2 group"
+              className="w-full py-4 bg-app-foreground text-app-bg rounded-2xl font-bold text-[10px] uppercase tracking-widest hover:opacity-90 transition-all flex items-center justify-center gap-3 active:scale-95 group shadow-lg"
             >
-              <RefreshCcw size={16} className="group-hover:rotate-180 transition-transform duration-500" />
-              Reload Page
+              <RefreshCcw size={18} className="group-hover:rotate-180 transition-transform duration-700" />
+              Reset Console
             </button>
           </motion.div>
         </div>

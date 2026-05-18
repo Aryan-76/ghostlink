@@ -9,7 +9,10 @@ import {
   Hash, 
   Command,
   Network,
-  Globe
+  Globe,
+  Menu,
+  X as CloseIcon,
+  Bell
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -18,25 +21,31 @@ interface SidebarItemProps {
   icon: React.ReactNode;
   label: string;
   active?: boolean;
-  key?: React.Key;
+  badgeCount?: number;
+  onClick?: () => void;
 }
 
-const SidebarItem = ({ to, icon, label, active }: SidebarItemProps) => (
-  <Link to={to} aria-label={`Navigate to ${label}`} aria-current={active ? 'page' : undefined}>
+const SidebarItem = ({ to, icon, label, active, badgeCount, onClick }: SidebarItemProps) => (
+  <Link to={to} onClick={onClick} aria-label={`Navigate to ${label}`} aria-current={active ? 'page' : undefined}>
     <motion.div
       whileHover={{ x: 4 }}
-      className={`flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group ${
+      className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${
         active 
-          ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' 
-          : 'text-zinc-500 hover:text-zinc-100 hover:bg-white/5'
+          ? 'bg-app-primary text-white shadow-lg shadow-app-primary/20' 
+          : 'text-app-muted hover:text-app-foreground hover:bg-app-muted-bg'
       }`}
     >
-      <span className={`${active ? 'text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.2)]' : ''}`}>{icon}</span>
-      <span className="font-medium text-sm">{label}</span>
-      {active && (
+      <span className={`${active ? 'text-white' : ''}`}>{icon}</span>
+      <span className="font-semibold text-sm tracking-tight">{label}</span>
+      {badgeCount !== undefined && badgeCount > 0 && (
+        <span className="ml-auto bg-emerald-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full min-w-[20px] flex items-center justify-center border-2 border-app-card">
+          {badgeCount}
+        </span>
+      )}
+      {active && !badgeCount && (
         <motion.div 
           layoutId="active-indicator"
-          className="ml-auto w-1 h-4 bg-indigo-500 rounded-full" 
+          className="ml-auto w-1 h-4 bg-white/40 rounded-full" 
         />
       )}
     </motion.div>
@@ -45,58 +54,40 @@ const SidebarItem = ({ to, icon, label, active }: SidebarItemProps) => (
 
 import { Toaster, toast } from 'sonner';
 import { useAuthStore } from '../../store/authStore';
+import { useWorkspace } from '../../hooks/useWorkspace';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
+import NexusSearchModal from '../NexusSearchModal';
+import NotificationCenter from '../NotificationCenter';
 
 export const Shell = React.memo(({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const { theme } = useWorkspace();
+  const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
+  const [isSearchOpen, setIsSearchOpen] = React.useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = React.useState(false);
 
   useEffect(() => {
-    let isSubscribed = true;
-
-    const syncUserProfile = async () => {
-      if (!user || !user.uid) return;
-      
-      try {
-        const userRef = doc(db, 'users', user.uid);
-        // Only attempt to sync if we're not already in the middle of a sync
-        const userSnap = await getDoc(userRef);
-        
-        if (isSubscribed && !userSnap.exists()) {
-          console.log("[Shell] Syncing new user profile...");
-          await setDoc(userRef, {
-            userId: user.uid,
-            email: user.email,
-            displayName: user.displayName || 'Anonymous',
-            photoURL: user.photoURL || '',
-            updatedAt: serverTimestamp(),
-            createdAt: serverTimestamp()
-          });
-        }
-      } catch (error: any) {
-        // Silently handle "client is offline" errors
-        if (!error?.message?.includes('offline')) {
-          console.error("Profile sync error:", error);
-        }
-      }
-    };
-    
-    syncUserProfile();
-    return () => { isSubscribed = false; };
-  }, [user]);
+    // Close sidebar on route change
+    setIsSidebarOpen(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
-        navigate('/command');
+        setIsSearchOpen(true);
+      }
+      if (e.key === 'Escape') {
+        setIsSearchOpen(false);
+        setIsSidebarOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [navigate]);
+  }, []);
   
   const isAuth = location.pathname === '/auth';
   const isLanding = location.pathname === '/';
@@ -107,29 +98,51 @@ export const Shell = React.memo(({ children }: { children: React.ReactNode }) =>
   const menuItems = [
     { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
     { to: '/community', icon: <Globe size={18} />, label: 'Community' },
-    { to: '/messages', icon: <MessageSquare size={18} />, label: 'Messages' },
+    { to: '/messages', icon: <MessageSquare size={18} />, label: 'Messages', badgeCount: 2 },
     { to: '/settings', icon: <User size={18} />, label: 'Settings' },
   ];
 
   const userInitial = user?.displayName ? user.displayName[0] : (user?.email ? user.email[0] : 'U');
-  const currentPageLabel = menuItems.find(item => item.to === location.pathname)?.label || 'Project';
+  const currentPageLabel = menuItems.find(item => item.to === location.pathname)?.label || 'Workspace';
 
   return (
-    <div className="flex h-screen bg-[#020306] overflow-hidden relative selection:bg-indigo-500/30 selection:text-white">
-      <Toaster theme="dark" position="top-center" />
+    <div className="flex h-screen bg-app-bg overflow-hidden relative selection:bg-app-primary/30 selection:text-white">
+      <Toaster theme={theme === 'dark' ? 'dark' : 'light'} position="top-center" richColors />
+      <NexusSearchModal isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
       
+      {/* Mobile Sidebar Overlay */}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsSidebarOpen(false)}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden"
+          />
+        )}
+      </AnimatePresence>
+
       {/* Sidebar */}
-      <aside className="w-[240px] bg-[#0A0B0E] border-r border-white/5 flex flex-col flex-shrink-0 z-20" aria-label="Main Sidebar">
-        <div className="p-6">
-          <div className="flex items-center gap-3 mb-10">
-            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center">
-              <Network size={18} className="text-white" />
+      <aside 
+        className={`fixed inset-y-0 left-0 w-[280px] bg-app-card border-r border-app-border flex flex-col z-50 transition-transform duration-300 md:relative md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        aria-label="Main Sidebar"
+      >
+        <div className="p-8 flex flex-col h-full">
+          <div className="flex items-center justify-between mb-12">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-2xl bg-app-primary flex items-center justify-center shadow-xl shadow-app-primary/20">
+                <Network size={22} className="text-white" />
+              </div>
+              <span className="font-display font-black text-xl tracking-tighter text-app-foreground">GhostLink</span>
             </div>
-            <span className="font-display font-semibold text-lg tracking-tight text-white">GhostLink</span>
+            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 text-app-muted hover:text-app-foreground">
+              <CloseIcon size={20} />
+            </button>
           </div>
 
-          <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-bold mb-4 ml-2">Platform</div>
-          <nav className="space-y-1" aria-label="Main Navigation">
+          <div className="text-[10px] uppercase tracking-[0.3em] text-app-muted font-bold mb-6 ml-2 opacity-40">System Nodes</div>
+          <nav className="space-y-2 flex-1" aria-label="Main Navigation">
             {menuItems.map((item) => (
               <SidebarItem 
                 key={item.to} 
@@ -137,58 +150,85 @@ export const Shell = React.memo(({ children }: { children: React.ReactNode }) =>
                 icon={item.icon} 
                 label={item.label} 
                 active={location.pathname === item.to}
+                badgeCount={item.badgeCount}
+                onClick={() => setIsSidebarOpen(false)}
               />
             ))}
           </nav>
-        </div>
 
-        <div className="mt-auto p-4 border-t border-white/5 bg-white/[0.01]">
-          <Link to="/settings" className="flex items-center gap-3 px-2 py-1 group cursor-pointer" role="button" aria-label="User Profile">
-            <div className="w-8 h-8 rounded-full bg-zinc-800 border border-white/10 flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-zinc-500 uppercase">
-              {userInitial}
-            </div>
-            <div className="overflow-hidden">
-              <div className="text-xs font-semibold text-white truncate">{user?.displayName || user?.email || 'User'}</div>
-              <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">MVP Early Access</div>
-            </div>
-          </Link>
+          <div className="mt-auto pt-8 border-t border-app-border">
+            <Link to="/settings" className="flex items-center gap-4 p-4 bg-app-muted-bg/50 rounded-2xl border border-app-border group hover:border-app-primary/30 transition-all">
+              <div className="w-10 h-10 rounded-xl bg-app-card border border-app-border flex-shrink-0 flex items-center justify-center text-[12px] font-bold text-app-muted uppercase overflow-hidden shadow-sm">
+                {user?.photoURL ? (
+                  <img src={user.photoURL} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  userInitial
+                )}
+              </div>
+              <div className="overflow-hidden min-w-0">
+                <div className="text-sm font-bold text-app-foreground truncate">{user?.displayName || user?.email || 'User'}</div>
+                <div className="text-[9px] text-app-muted font-bold uppercase tracking-widest opacity-60">Verified Operator</div>
+              </div>
+            </Link>
+          </div>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 relative z-10">
-        <header className="h-16 border-b border-white/5 bg-[#020306]/80 backdrop-blur-md flex items-center justify-between px-8" role="banner">
+      <div className="flex-1 flex flex-col min-w-0 relative z-10 text-app-foreground">
+        <header className="h-20 border-b border-app-border bg-app-bg/80 backdrop-blur-md flex items-center justify-between px-6 md:px-10" role="banner">
           <div className="flex items-center gap-4">
-            <nav className="flex items-center gap-2 text-zinc-500 text-xs font-medium" aria-label="Breadcrumb">
-              <Link to="/dashboard" className="hover:text-zinc-300 transition-colors">GhostLink</Link>
+            <button 
+              onClick={() => setIsSidebarOpen(true)}
+              className="md:hidden p-2 -ml-2 text-app-muted hover:text-app-foreground transition-all"
+            >
+              <Menu size={24} />
+            </button>
+            <nav className="flex items-center gap-3 text-app-muted text-[10px] font-bold uppercase tracking-widest" aria-label="Breadcrumb">
+              <Link to="/dashboard" className="hover:text-app-primary transition-colors">GhostLink</Link>
               <span className="opacity-20" aria-hidden="true">/</span>
-              <span className="text-zinc-100 font-medium">{currentPageLabel}</span>
+              <span className="text-app-foreground">{currentPageLabel}</span>
             </nav>
           </div>
 
-          <div className="flex items-center gap-6">
-            <div className="relative group focus-within:ring-2 focus-within:ring-indigo-500/20 rounded-md">
-              <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                <Search size={12} className="text-zinc-500" />
+          <div className="flex items-center gap-4 md:gap-8">
+            <div className="hidden lg:flex items-center relative group">
+              <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+                <Search size={14} className="text-app-muted" />
               </div>
               <input 
                 type="text" 
-                placeholder="Search projects..." 
-                aria-label="Universal Search"
-                className="bg-white/5 border border-white/10 rounded-md pl-9 pr-12 py-1.5 text-xs focus:outline-none focus:border-white/20 w-64 text-zinc-300 transition-all font-medium"
+                readOnly
+                onClick={() => setIsSearchOpen(true)}
+                placeholder="Universal Search..." 
+                className="bg-app-muted-bg border border-app-border rounded-xl pl-12 pr-12 py-2.5 text-xs focus:outline-none focus:border-app-primary/40 w-72 text-app-foreground transition-all font-medium placeholder:text-app-muted/50 cursor-pointer"
               />
+              <div className="absolute right-3 px-1.5 py-0.5 rounded border border-app-border bg-app-card text-[9px] font-bold text-app-muted opacity-40">
+                ⌘K
+              </div>
             </div>
 
-            <button 
-              onClick={() => {
-                navigator.clipboard.writeText(window.location.href);
-                toast.success('Link copied to clipboard');
-              }}
-              className="bg-white hover:bg-zinc-200 text-black px-4 py-1.5 rounded-md text-xs font-semibold transition-all active:scale-95"
-              aria-label="Share page"
-            >
-              Share
-            </button>
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <button 
+                  onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                  className={`p-2.5 rounded-xl transition-all relative ${isNotificationsOpen ? 'bg-app-primary text-white shadow-lg' : 'text-app-muted hover:text-app-foreground hover:bg-app-muted-bg'}`}
+                >
+                  <Bell size={20} />
+                  <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-emerald-500 rounded-full border-2 border-app-bg" />
+                </button>
+                <NotificationCenter isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
+              </div>
+              <button 
+                onClick={() => {
+                  navigator.clipboard.writeText(window.location.href);
+                  toast.success('Nexus signal link copied');
+                }}
+                className="bg-app-foreground text-app-bg px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all active:scale-95 shadow-xl shadow-black/10"
+              >
+                Share
+              </button>
+            </div>
           </div>
         </header>
 

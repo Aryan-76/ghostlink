@@ -85,10 +85,12 @@ export default function AuthPage() {
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     setError(null);
+    console.log("[Auth] Google Login START");
     try {
       const provider = new GoogleAuthProvider();
       const userCredential = await signInWithPopup(auth, provider);
       const user = userCredential.user;
+      console.log("[Auth] Google Login SUCCESS:", user.uid);
 
       // Ensure user exists in Firestore
       const { setDoc, doc, getDoc, serverTimestamp } = await import('firebase/firestore');
@@ -96,6 +98,7 @@ export default function AuthPage() {
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       
       if (!userDoc.exists()) {
+        console.log("[Auth] Initializing new user profile in Firestore");
         await setDoc(doc(db, 'users', user.uid), {
           userId: user.uid,
           email: user.email,
@@ -103,13 +106,15 @@ export default function AuthPage() {
           role: 'user',
           status: 'Active',
           avatarUrl: user.photoURL || '',
+          theme: 'dark',
+          createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });
       }
 
-      navigate('/workspace');
+      navigate('/dashboard');
     } catch (err: any) {
-      console.error(err);
+      console.error("[Auth] Google Login FAILURE:", err);
       if (err.code !== 'auth/popup-closed-by-user') {
         const currentDomain = window.location.hostname;
         console.error(`[Auth Diagnostic] Authentication failed from domain: ${currentDomain}`);
@@ -129,9 +134,9 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#020306] flex items-center justify-center p-8 relative overflow-hidden">
+    <div className="min-h-screen bg-app-bg flex items-center justify-center p-8 relative overflow-hidden transition-colors selection:bg-app-primary/30">
       {/* Background Accent */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-indigo-500/5 blur-[120px] rounded-full pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-app-primary/5 blur-[120px] rounded-full pointer-events-none" />
       
       <motion.div 
         initial={{ opacity: 0, y: 10 }}
@@ -139,99 +144,101 @@ export default function AuthPage() {
         className="w-full max-w-sm relative z-10"
       >
         <div className="text-center mb-10">
-          <div className="w-12 h-12 rounded-xl bg-indigo-600 flex items-center justify-center mx-auto mb-6 shadow-xl">
+          <div className="w-12 h-12 rounded-xl bg-app-primary flex items-center justify-center mx-auto mb-6 shadow-xl shadow-app-primary/20">
             <Layout size={24} className="text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight mb-2">
-            Welcome back
+          <h1 className="text-2xl font-bold text-app-foreground tracking-tight mb-2">
+            GhostLink Console
           </h1>
-          <p className="text-sm text-zinc-500">Sign in to your GhostLink workspace.</p>
+          <p className="text-sm text-app-muted font-medium opacity-70">Initialize your secure workspace session.</p>
         </div>
 
-        <div className="bg-[#0A0B0E] border border-white/5 p-8 rounded-2xl shadow-2xl">
-          <div className="flex gap-4 mb-8 border-b border-white/5">
+        <div className="bg-app-card border border-app-border p-8 rounded-[2rem] shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-app-primary to-indigo-400 opacity-50" />
+          
+          <div className="flex gap-4 mb-8 border-b border-app-border">
             <button 
               onClick={() => setIsLogin(true)}
-              className={`flex-1 pb-3 text-xs font-bold uppercase tracking-widest transition-all border-b-2 ${
-                isLogin ? 'text-white border-indigo-500' : 'text-zinc-600 border-transparent hover:text-zinc-400'
+              className={`flex-1 pb-3 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 ${
+                isLogin ? 'text-app-foreground border-app-primary' : 'text-app-muted border-transparent hover:text-app-foreground'
               }`}
             >
-              Sign In
+              Access
             </button>
             <button 
               onClick={() => setIsLogin(false)}
-              className={`flex-1 pb-3 text-xs font-bold uppercase tracking-widest transition-all border-b-2 ${
-                !isLogin ? 'text-white border-indigo-500' : 'text-zinc-600 border-transparent hover:text-zinc-400'
+              className={`flex-1 pb-3 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 ${
+                !isLogin ? 'text-app-foreground border-app-primary' : 'text-app-muted border-transparent hover:text-app-foreground'
               }`}
             >
-              Get Started
+              Deploy
             </button>
           </div>
 
-          <form onSubmit={handleEmailAuth} className="space-y-5">
+          <form onSubmit={handleEmailAuth} className="space-y-6">
             {error && (
               <motion.div 
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="bg-red-500/10 border border-red-500/20 p-3 rounded-xl text-[10px] font-bold text-red-400 uppercase tracking-widest"
+                className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl text-[10px] font-bold text-red-500 uppercase tracking-widest"
               >
                 {error}
               </motion.div>
             )}
             {!isLogin && (
-              <div>
-                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 pl-1">Full Name</label>
-                <div className="relative">
-                  <Fingerprint className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600" size={16} />
+              <div className="space-y-2">
+                <label className="block text-[10px] font-bold text-app-muted uppercase tracking-widest pl-1 opacity-60">Identity Alias</label>
+                <div className="relative group">
+                  <Fingerprint className="absolute left-4 top-1/2 -translate-y-1/2 text-app-muted opacity-30 group-focus-within:text-app-primary transition-colors" size={18} />
                   <input 
                     type="text" 
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="Alex Rivera"
+                    placeholder="Nexus Operator"
                     required
-                    className="w-full bg-white/[0.03] border border-white/5 py-3 pl-11 pr-4 rounded-xl text-white placeholder:text-zinc-700 focus:outline-none focus:border-white/10 transition-all text-sm"
+                    className="w-full bg-app-muted-bg border border-app-border py-4 pl-12 pr-4 rounded-2xl text-app-foreground placeholder:text-app-muted/30 focus:outline-none focus:ring-2 focus:ring-app-primary/20 transition-all text-sm font-bold"
                   />
                 </div>
               </div>
             )}
 
-            <div>
-              <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 pl-1">Work Email</label>
-              <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600" size={16} />
+            <div className="space-y-2">
+              <label className="block text-[10px] font-bold text-app-muted uppercase tracking-widest pl-1 opacity-60">Credentials</label>
+              <div className="relative group/mail">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-app-muted opacity-30 group-focus-within/mail:text-app-primary transition-colors" size={18} />
                 <input 
                   type="email" 
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@company.com"
+                  placeholder="operator@nexus.io"
                   required
-                  className="w-full bg-white/[0.03] border border-white/5 py-3 pl-11 pr-4 rounded-xl text-white placeholder:text-zinc-700 focus:outline-none focus:border-white/10 transition-all text-sm"
+                  className="w-full bg-app-muted-bg border border-app-border py-4 pl-12 pr-4 rounded-2xl text-app-foreground placeholder:text-app-muted/30 focus:outline-none focus:ring-2 focus:ring-app-primary/20 transition-all text-sm font-bold"
                 />
               </div>
             </div>
 
-            <div>
-              <div className="flex justify-between mb-2 pl-1">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Password</label>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center pl-1">
+                <label className="text-[10px] font-bold text-app-muted uppercase tracking-widest opacity-60">Secured Access</label>
                 {isLogin && (
                   <button 
                     type="button"
-                    onClick={() => toast.info('Password reset instructions sent to your email.')}
-                    className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors uppercase tracking-widest"
+                    onClick={() => toast.info('Access recovery instructions transmitted.')}
+                    className="text-[10px] font-bold text-app-primary hover:text-indigo-400 transition-colors uppercase tracking-widest"
                   >
-                    Forgot?
+                    Recover
                   </button>
                 )}
               </div>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600" size={16} />
+              <div className="relative group/pass">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-app-muted opacity-30 group-focus-within/pass:text-app-primary transition-colors" size={18} />
                 <input 
                   type="password" 
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
                   required
-                  className="w-full bg-white/[0.03] border border-white/5 py-3 pl-11 pr-4 rounded-xl text-white placeholder:text-zinc-700 focus:outline-none focus:border-white/10 transition-all text-sm"
+                  className="w-full bg-app-muted-bg border border-app-border py-4 pl-12 pr-4 rounded-2xl text-app-foreground placeholder:text-app-muted/30 focus:outline-none focus:ring-2 focus:ring-app-primary/20 transition-all text-sm font-bold"
                 />
               </div>
             </div>
@@ -239,32 +246,34 @@ export default function AuthPage() {
             <button 
               type="submit" 
               disabled={isLoading}
-              className="w-full py-3.5 bg-white text-black rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-zinc-200 disabled:opacity-50 transition-all flex items-center justify-center gap-2 group"
+              className="w-full py-4 bg-app-foreground text-app-bg rounded-2xl font-bold text-[10px] uppercase tracking-widest hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-3 group/btn shadow-lg active:scale-95"
             >
-              {isLoading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
-              {!isLoading && <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />}
+              {isLoading ? 'Synchronizing...' : (isLogin ? 'Access Console' : 'Deploy Identity')}
+              {!isLoading && <ArrowRight size={18} className="group-hover/btn:translate-x-1 transition-transform" />}
             </button>
           </form>
 
-          <div className="mt-8 pt-8 border-t border-white/5">
-            <p className="text-center text-[10px] font-bold text-zinc-600 uppercase tracking-widest mb-6">Or continue with</p>
-            <div className="flex flex-col gap-3">
+          <div className="mt-10 pt-8 border-t border-app-border">
+            <p className="text-center text-[9px] font-bold text-app-muted uppercase tracking-widest mb-6 opacity-40">External Protocols</p>
+            <div className="flex flex-col gap-4">
               <button 
                 onClick={handleGoogleLogin}
-                className="w-full bg-white/[0.03] border border-white/5 py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-white/[0.06] transition-all text-zinc-400"
+                className="w-full bg-app-card border border-app-border py-4 rounded-2xl flex items-center justify-center gap-3 hover:bg-app-muted-bg transition-all text-app-foreground shadow-sm active:scale-95 group/google"
               >
-                <div className="w-4 h-4 rounded-full bg-white flex items-center justify-center">
-                   <div className="w-2 h-2 bg-indigo-600 rounded-full" />
+                <div className="w-5 h-5 rounded-full bg-app-foreground flex items-center justify-center group-hover/google:rotate-[360deg] transition-all duration-500">
+                   <div className="w-2 h-2 bg-app-bg rounded-full shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
                 </div>
-                <span className="text-[10px] font-bold uppercase tracking-widest">Sign in with Google</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest">Sign in with Google Account</span>
               </button>
             </div>
           </div>
         </div>
 
-        <p className="text-center mt-10 text-[9px] font-bold text-zinc-700 uppercase tracking-[0.2em]">
-          Cloud Identity • Enterprise Security
-        </p>
+        <div className="text-center mt-12 space-y-2">
+          <p className="text-[9px] font-bold text-app-muted uppercase tracking-[0.3em] opacity-30">
+            Nexus Intelligence System • Secure Core
+          </p>
+        </div>
       </motion.div>
     </div>
   );

@@ -28,7 +28,9 @@ if (!firebaseConfig.apiKey) {
 }
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, databaseId);
+export const db = getFirestore(app, {
+  experimentalForceLongPolling: true,
+} as any);
 export const auth = getAuth();
 export const storage = getStorage(app);
 
@@ -38,12 +40,11 @@ async function testConnection() {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error: any) {
     const message = error?.message || "";
-    if(message.includes('the client is offline')) {
-      console.error("Firebase: Storage unreachable. Check network connection.");
-    } else if (message.includes('permission') || message.includes('insufficient')) {
-      // Permission probe denied as expected depending on rules
-    } else {
-      console.error(`Firebase connection error: ${error.code || 'unknown'}`);
+    // Only log if it's NOT an expected transient offline/permission error
+    if (!message.includes('the client is offline') && 
+        !message.includes('permission') && 
+        !message.includes('insufficient')) {
+      console.error(`Firebase diagnostic error: ${message}`);
     }
   }
 }

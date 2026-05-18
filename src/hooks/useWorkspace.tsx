@@ -12,7 +12,9 @@ import {
   onSnapshot,
   deleteDoc,
   doc,
-  updateDoc
+  updateDoc,
+  getDoc,
+  setDoc
 } from 'firebase/firestore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
@@ -25,8 +27,11 @@ interface WorkspaceContextType {
   stats: WorkspaceStats;
   isLoading: boolean;
   user: any;
+  userProfile: any;
   allUsers: any[];
   conversations: any[];
+  theme: string;
+  setTheme: (theme: string) => Promise<void>;
   addProject: (project: Omit<Project, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>) => Promise<string>;
   updateProject: (id: string, updates: Partial<Project>) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
@@ -45,6 +50,105 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [isActivitiesLoading, setIsActivitiesLoading] = useState(true);
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [conversations, setConversations] = useState<any[]>([]);
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [theme, setInternalTheme] = useState(() => {
+    return localStorage.getItem('ghostlink-theme') || 'dark';
+  });
+
+  // Sync user profile and theme
+  useEffect(() => {
+    if (!user) {
+      setUserProfile(null);
+      return;
+    }
+
+    const userRef = doc(db, 'users', user.uid);
+    
+    // Check and initialize user if not exists
+    const initUser = async () => {
+      try {
+        const snap = await getDoc(userRef);
+        if (!snap.exists()) {
+          await setDoc(userRef, {
+            email: user.email,
+            displayName: user.displayName || 'Anonymous',
+            photoURL: user.photoURL || '',
+            theme: 'dark',
+            status: 'online',
+            lastActive: serverTimestamp(),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+        } else {
+          // Update status to online when user connects
+          await updateDoc(userRef, {
+            status: 'online',
+            lastActive: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+        }
+      } catch (e: any) {
+        if (!e?.message?.includes('offline')) {
+          console.error("User Init Error:", e);
+        }
+      }
+    };
+    initUser();
+
+    // Heartbeat to keep status 'online'
+    const heartbeat = setInterval(async () => {
+      if (document.visibilityState === 'visible') {
+        try {
+          await updateDoc(userRef, {
+            lastActive: serverTimestamp(),
+            status: 'online'
+          });
+        } catch (e) {}
+      }
+    }, 60000); // Every 60 seconds
+
+    // Set offline on tab close
+    const handleUnload = () => {
+      // Use navigator.sendBeacon or a forced update if possible, 
+      // but Firestore update is async and might not finish.
+      // Best effort status update
+      updateDoc(userRef, {
+        status: 'offline',
+        lastActive: serverTimestamp()
+      }).catch(() => {});
+    };
+
+    window.addEventListener('beforeunload', handleUnload);
+
+    const unsub = onSnapshot(userRef, (doc) => {
+      if (doc.exists()) {
+        const data = doc.data();
+        setUserProfile(data);
+        if (data.theme) setInternalTheme(data.theme);
+      }
+    });
+
+    return () => {
+      clearInterval(heartbeat);
+      window.removeEventListener('beforeunload', handleUnload);
+      handleUnload();
+      unsub();
+    };
+  }, [user]);
+
+  // Apply theme to document
+  useEffect(() => {
+    console.log("[Workspace] Applying theme:", theme);
+    let resolvedTheme = theme;
+    if (theme === 'system') {
+      resolvedTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    
+    document.documentElement.classList.remove('light', 'dark');
+    document.documentElement.classList.add(resolvedTheme);
+    document.documentElement.setAttribute('data-theme', resolvedTheme);
+    localStorage.setItem('ghostlink-theme', theme);
+  }, [theme]);
 
   // Fetch all users for discovery
   useEffect(() => {
@@ -63,11 +167,17 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     }
     const q = query(
       collection(db, 'conversations'),
-      where('participants', 'array-contains', user.uid),
-      orderBy('updatedAt', 'desc')
+      where('participants', 'array-contains', user.uid)
     );
     const unsub = onSnapshot(q, (snapshot) => {
-      setConversations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Local sort to avoid composite index requirements
+      items.sort((a: any, b: any) => {
+        const timeA = a.updatedAt?.toMillis?.() || 0;
+        const timeB = b.updatedAt?.toMillis?.() || 0;
+        return timeB - timeA;
+      });
+      setConversations(items);
     });
     return () => unsub();
   }, [user]);
@@ -80,13 +190,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // Simplified query to avoid complex index requirements in dev environment
+    const qLabel = `projects_for_${user.uid}`;
+    console.log(`[Workspace] Initializing projects listener: ${qLabel}`);
+
     const q = query(
       collection(db, 'projects'),
-      or(
-        where('ownerId', '==', user.uid),
-        where('collaborators', 'array-contains', user.uid)
-      ),
-      orderBy('updatedAt', 'desc')
+      where('collaborators', 'array-contains', user.uid)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -94,18 +204,27 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         id: doc.id, 
         ...doc.data() 
       })) as Project[];
+      
+      // Sort in-memory to bypass composite index requirement for (collaborators + updatedAt)
+      items.sort((a, b) => {
+        const timeA = (a.updatedAt as any)?.toMillis?.() || 0;
+        const timeB = (b.updatedAt as any)?.toMillis?.() || 0;
+        return timeB - timeA;
+      });
+
       setProjects(items);
       setIsProjectsLoading(false);
+      console.log(`[Workspace] Projects updated: ${items.length} items`);
     }, (error) => {
-      console.error("Projects Listener Error:", error);
-      handleFirestoreError(error, OperationType.LIST, 'projects');
+      console.error("[Workspace] Projects Listener Error:", error);
+      // Don't throw here, just log and update state
       setIsProjectsLoading(false);
     });
 
     return () => unsubscribe();
   }, [user]);
 
-  // Real-time Activities Listener (Global feed)
+  // Real-time Activities Listener
   useEffect(() => {
     if (!user) {
       setActivities([]);
@@ -113,50 +232,67 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // List activities without complex ordering to avoid index issues
     const q = query(
       collection(db, 'activities'),
-      orderBy('timestamp', 'desc'),
-      limit(20)
+      limit(50)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const items = snapshot.docs.map(doc => {
         const data = doc.data();
-        const ts = data.timestamp;
         return {
           id: doc.id,
-          ...data,
-          time: ts ? `${Math.floor((Date.now() - (ts.toMillis ? ts.toMillis() : Date.now())) / 60000)}m ago` : 'Just now'
+          ...data
         };
       }) as Activity[];
-      setActivities(items);
+
+      // Sort in-memory
+      items.sort((a, b) => {
+        const timeA = (a.timestamp as any)?.toMillis?.() || 0;
+        const timeB = (b.timestamp as any)?.toMillis?.() || 0;
+        return timeB - timeA;
+      });
+
+      const processedItems = items.map(item => {
+        const ts = item.timestamp as any;
+        return {
+          ...item,
+          time: ts ? `${Math.floor((Date.now() - (ts.toMillis ? ts.toMillis() : Date.now())) / 60000)}m ago` : 'Just now'
+        };
+      });
+
+      setActivities(processedItems);
       setIsActivitiesLoading(false);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'activities');
+      console.error("[Workspace] Activities Listener Error:", error);
       setIsActivitiesLoading(false);
     });
 
     return () => unsubscribe();
   }, [user]);
 
-  const projectMutation = useMutation({
-    mutationFn: async (project: Omit<Project, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>) => {
-      if (!user) throw new Error('Not authenticated');
-      try {
-        const docRef = await addDoc(collection(db, 'projects'), {
-          ...project,
-          ownerId: user.uid,
-          collaborators: [user.uid],
-          updatedAt: serverTimestamp(),
-          createdAt: serverTimestamp()
-        });
-        return docRef.id;
-      } catch (error) {
-        handleFirestoreError(error, OperationType.CREATE, 'projects');
-        throw error;
-      }
+  const addProject = async (project: Omit<Project, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>) => {
+    if (!user) throw new Error('Not authenticated');
+    console.log("[Workspace] Mutation: addProject START", project.title);
+    try {
+      const payload = {
+        ...project,
+        ownerId: user.uid,
+        collaborators: [user.uid],
+        updatedAt: serverTimestamp(),
+        createdAt: serverTimestamp()
+      };
+      
+      const docRef = await addDoc(collection(db, 'projects'), payload);
+      console.log("[Workspace] Mutation: addProject SUCCESS", docRef.id);
+      return docRef.id;
+    } catch (error) {
+      console.error("[Workspace] Mutation: addProject FAILURE", error);
+      handleFirestoreError(error, OperationType.CREATE, 'projects');
+      throw error;
     }
-  });
+  };
 
   const stats = useMemo<WorkspaceStats>(() => ({
     activeProjects: projects.filter(p => p.status === 'active').length,
@@ -219,20 +355,37 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const setTheme = async (newTheme: string) => {
+    setInternalTheme(newTheme);
+    localStorage.setItem('ghostlink-theme', newTheme);
+    if (!user) return;
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        theme: newTheme,
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error("Set Theme Error:", error);
+    }
+  };
+
   const value = useMemo(() => ({ 
     projects, 
     activities, 
     stats, 
     isLoading, 
     user, 
+    userProfile,
     allUsers,
     conversations,
-    addProject: projectMutation.mutateAsync,
+    theme,
+    setTheme,
+    addProject,
     updateProject,
     deleteProject,
     logActivity,
     addCollaborator
-  }), [projects, activities, stats, isLoading, user, allUsers, conversations, projectMutation]);
+  }), [projects, activities, stats, isLoading, user, userProfile, allUsers, conversations, theme]);
 
   return (
     <WorkspaceContext.Provider value={value}>
