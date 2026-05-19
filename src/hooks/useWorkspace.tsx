@@ -68,24 +68,24 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     const initUser = async () => {
       try {
         const snap = await getDoc(userRef);
+        const presenceData = {
+          status: 'online',
+          lastActive: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        };
+
         if (!snap.exists()) {
           await setDoc(userRef, {
+            uid: user.uid,
             email: user.email,
             displayName: user.displayName || 'Anonymous',
             photoURL: user.photoURL || '',
             theme: 'dark',
-            status: 'online',
-            lastActive: serverTimestamp(),
             createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp()
+            ...presenceData
           });
         } else {
-          // Update status to online when user connects
-          await updateDoc(userRef, {
-            status: 'online',
-            lastActive: serverTimestamp(),
-            updatedAt: serverTimestamp()
-          });
+          await updateDoc(userRef, presenceData);
         }
       } catch (e: any) {
         if (!e?.message?.includes('offline')) {
@@ -96,29 +96,35 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     initUser();
 
     // Heartbeat to keep status 'online'
-    const heartbeat = setInterval(async () => {
-      if (document.visibilityState === 'visible') {
-        try {
-          await updateDoc(userRef, {
-            lastActive: serverTimestamp(),
-            status: 'online'
-          });
-        } catch (e) {}
-      }
-    }, 60000); // Every 60 seconds
-
-    // Set offline on tab close
-    const handleUnload = () => {
-      // Use navigator.sendBeacon or a forced update if possible, 
-      // but Firestore update is async and might not finish.
-      // Best effort status update
-      updateDoc(userRef, {
-        status: 'offline',
-        lastActive: serverTimestamp()
-      }).catch(() => {});
+    let lastHeartbeat = Date.now();
+    const updatePresence = async (status: 'online' | 'offline' = 'online') => {
+      if (!user) return;
+      // Throttling: don't write more than once every 15s for 'online'
+      if (status === 'online' && Date.now() - lastHeartbeat < 15000) return;
+      
+      try {
+        await updateDoc(doc(db, 'users', user.uid), {
+          status,
+          lastActive: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        lastHeartbeat = Date.now();
+      } catch (e) {}
     };
 
-    window.addEventListener('beforeunload', handleUnload);
+    const heartbeat = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        updatePresence('online');
+      }
+    }, 30000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        updatePresence('online');
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const unsub = onSnapshot(userRef, (doc) => {
       if (doc.exists()) {
@@ -126,12 +132,15 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         setUserProfile(data);
         if (data.theme) setInternalTheme(data.theme);
       }
+    }, (error) => {
+      console.error("[Workspace] Profile Listener Error:", error);
     });
 
     return () => {
       clearInterval(heartbeat);
-      window.removeEventListener('beforeunload', handleUnload);
-      handleUnload();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      // Attempt to mark offline
+      updatePresence('offline').catch(() => {});
       unsub();
     };
   }, [user]);
@@ -154,7 +163,19 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user) return;
     const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
-      setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const now = Date.now();
+      const items = snapshot.docs.map(doc => {
+        const data = doc.data();
+        const lastActive = (data.lastActive as any)?.toMillis?.() || 0;
+        // Mark as offline if no activity for 2 minutes OR if explicitly offline
+        const isStale = (now - lastActive) > 120000;
+        return { 
+          id: doc.id, 
+          ...data,
+          status: (isStale || data.status === 'offline') ? 'offline' : 'online'
+        };
+      });
+      setAllUsers(items);
     });
     return () => unsub();
   }, [user]);
@@ -276,7 +297,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     if (!user) throw new Error('Not authenticated');
     console.log("[Workspace] Mutation: addProject START", project.title);
     try {
+      const projectsRef = collection(db, 'projects');
+      const docRef = doc(projectsRef); // Pre-generate ID
+      
       const payload = {
+        id: docRef.id,
         ...project,
         ownerId: user.uid,
         collaborators: [user.uid],
@@ -284,7 +309,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         createdAt: serverTimestamp()
       };
       
-      const docRef = await addDoc(collection(db, 'projects'), payload);
+      await setDoc(docRef, payload);
       console.log("[Workspace] Mutation: addProject SUCCESS", docRef.id);
       return docRef.id;
     } catch (error) {
@@ -302,12 +327,19 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   const logActivity = async (activity: Omit<Activity, 'id' | 'timestamp' | 'actorId' | 'actorName'>) => {
     if (!user) return;
-    await addDoc(collection(db, 'activities'), {
-      ...activity,
-      actorId: user.uid,
-      actorName: user.displayName || user.email || 'User',
-      timestamp: serverTimestamp()
-    });
+    try {
+      const activitiesRef = collection(db, 'activities');
+      const docRef = doc(activitiesRef);
+      await setDoc(docRef, {
+        id: docRef.id,
+        ...activity,
+        actorId: user.uid,
+        actorName: user.displayName || user.email || 'User',
+        timestamp: serverTimestamp()
+      });
+    } catch (e) {
+      console.error("[Workspace] Activity Logging Error:", e);
+    }
   };
 
   const updateProject = async (id: string, updates: Partial<Project>) => {
@@ -338,20 +370,22 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       throw new Error('User not found. They must sign up first.');
     }
 
-    const newUser = userSnapshot.docs[0].data();
-    if (project.collaborators.includes(newUser.uid)) {
+    const newUserDoc = userSnapshot.docs[0];
+    const newUser = newUserDoc.data();
+    if (project.collaborators.includes(newUserDoc.id)) {
       throw new Error('User is already a collaborator');
     }
 
     const docRef = doc(db, 'projects', projectId);
     await updateDoc(docRef, {
-      collaborators: [...project.collaborators, newUser.uid],
+      collaborators: [...project.collaborators, newUserDoc.id],
       updatedAt: serverTimestamp()
     });
 
     await logActivity({
       type: 'member_added',
-      title: `Added ${newUser.displayName || newUser.email} to ${project.title}`
+      title: `Added ${newUser.displayName || newUser.email} to ${project.title}`,
+      projectId: projectId
     });
   };
 

@@ -136,41 +136,57 @@ export default function MainWorkspace() {
     }
 
     setIsCreating(true);
-    console.log("[MainWorkspace] Mutation: createProject START", newProject.title);
+    console.log("[MainWorkspace] Mutation: createProject STAT", newProject.title);
     
+    // Safety timer to prevent infinite spinner
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Project initialization timed out')), 3000)
+    );
+
     try {
-      const projectId = await addProject({
+      const createPromise = addProject({
         title: newProject.title,
         description: newProject.description,
         status: 'active',
         collaborators: [user.uid]
       });
+
+      const projectId = await Promise.race([createPromise, timeoutPromise]) as string;
       
       console.log("[MainWorkspace] Mutation: createProject SUCCESS", projectId);
 
-      // Close modal and reset form IMMEDIATELY before navigation
-      setIsModalOpen(false);
+      // 1. Reset input state
       const createdTitle = newProject.title;
       setNewProject({ title: '', description: '' });
+      
+      // 2. Clear loading & modal state
+      setIsCreating(false);
+      setIsModalOpen(false);
 
-      // Non-blocking activity log
+      // 3. Inform user
+      toast.success('Nexus Project initialized');
+
+      // 4. Trace activity (non-blocking)
       logActivity({
         type: 'project_created',
         title: `Project "${createdTitle}" initialized`,
         projectId: projectId
       }).catch(err => console.error("[MainWorkspace] Activity Logging Error:", err));
 
-      toast.success('Nexus Project initialized');
-      
-      // Delay navigation slightly to ensure UI stability
-      setTimeout(() => {
-        navigate(`/project/${projectId}`);
-      }, 100);
+      // 5. Clean navigation
+      setTimeout(() => navigate(`/project/${projectId}`), 150);
     } catch (error: any) {
       console.error("[MainWorkspace] Mutation: createProject FAILURE", error);
-      toast.error('Failed to initialize workspace. Trace: ' + (error.message || 'Unknown error'));
-    } finally {
+      
+      let message = error.message === 'Project initialization timed out' 
+        ? 'Initialization timed out. Please check your connection.'
+        : 'Initialization failed: ' + (error.message?.includes('permission') ? 'Permission denied' : 'Connection failed');
+      
+      toast.error(message);
+      
+      // Force cleanup
       setIsCreating(false);
+      setIsModalOpen(false);
     }
   };
 

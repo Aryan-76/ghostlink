@@ -6,6 +6,7 @@ export type Message = {
   createdAt: any; // Timestamp
   updatedAt?: any;
   edited?: boolean;
+  editedAt?: any;
   replyTo?: {
     messageId: string;
     senderName: string;

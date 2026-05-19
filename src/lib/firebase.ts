@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { initializeFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import aiStudioConfig from '../../firebase-applet-config.json';
 
@@ -24,13 +24,17 @@ if (!firebaseConfig.apiKey) {
     console.warn("Firebase: Using local configuration fallback.");
   }
 } else {
-  console.log(`[Firebase] Initializing project: ${firebaseConfig.projectId}`);
+  console.log(`[Firebase] Initializing project: ${firebaseConfig.projectId} | DB: ${databaseId || '(default)'}`);
 }
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, {
+
+// CRITICAL: Must use initializeFirestore to combine settings AND databaseId
+// Experimental long polling is often required in sandboxed iframes.
+export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-} as any);
+}, databaseId);
+
 export const auth = getAuth();
 export const storage = getStorage(app);
 

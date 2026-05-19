@@ -1,9 +1,19 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // Global Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
     // Basic Auth Primitives
     function isSignedIn() {
       return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     // Projects: Access is restricted to owners and collaborators
@@ -25,11 +35,11 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if canAccessProject();
         allow create: if canAccessProject() && request.resource.data.senderId == request.auth.uid;
-        allow update: if canAccessProject(); // Support reactions
+        allow update: if canAccessProject(); // Support reactions and edits
         allow delete: if canAccessProject() && resource.data.senderId == request.auth.uid;
       }
 
-      // Typing indicators
+      // Typing indicators - specific to project
       match /typing/{userId} {
         allow read: if canAccessProject();
         allow write: if isSignedIn() && request.auth.uid == userId;
@@ -44,13 +54,13 @@ service cloud.firestore {
       // Documents sub-collection
       match /documents/{docId} {
         allow read: if canAccessProject();
-        allow create: if canAccessProject() && request.resource.data.createdBy == request.auth.uid;
+        allow create: if canAccessProject() && (request.resource.data.createdBy == request.auth.uid || request.resource.data.uploader == request.auth.uid);
         allow update: if canAccessProject();
         allow delete: if canAccessProject();
       }
     }
 
-    // Activities: Global feed for network transparency
+    // Activities: Network transparency
     match /activities/{activityId} {
       allow list: if isSignedIn();
       allow get: if isSignedIn();
@@ -64,6 +74,13 @@ service cloud.firestore {
       allow update: if isSignedIn(); // For reactions
       allow delete: if isSignedIn() && resource.data.senderId == request.auth.uid;
     }
+    
+    // Global Typing Indicators
+    match /global_typing/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == userId;
+      allow delete: if isSignedIn() && request.auth.uid == userId;
+    }
 
     // User Profiles
     match /users/{userId} {
@@ -73,15 +90,25 @@ service cloud.firestore {
 
     // Direct Conversations
     match /conversations/{convId} {
-      allow read: if isSignedIn() && request.auth.uid in resource.data.participants;
+      function isParticipant() {
+        return isSignedIn() && request.auth.uid in resource.data.participants;
+      }
+      
+      allow read: if isParticipant();
       allow create: if isSignedIn() && request.auth.uid in request.resource.data.participants;
-      allow update: if isSignedIn() && request.auth.uid in resource.data.participants;
+      allow update: if isParticipant();
 
       match /messages/{messageId} {
         allow read: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participants;
         allow create: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participants;
         allow update: if isSignedIn(); // For reactions
         allow delete: if isSignedIn() && resource.data.senderId == request.auth.uid;
+      }
+      
+      match /typing/{userId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() && request.auth.uid == userId;
+        allow delete: if isSignedIn() && request.auth.uid == userId;
       }
     }
   }

@@ -64,8 +64,27 @@ export const Shell = React.memo(({ children }: { children: React.ReactNode }) =>
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const { theme } = useWorkspace();
+  const { theme, conversations, allUsers } = useWorkspace();
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
+
+  // Calculate real unread signals
+  const unreadCount = React.useMemo(() => {
+    return conversations.reduce((acc, conv) => {
+      if (!user) return acc;
+      const lastMessageAt = (conv.lastMessageAt as any)?.toMillis?.() || 0;
+      const lastReadAt = (conv.lastRead?.[user.uid] as any)?.toMillis?.() || 0;
+      const lastSenderId = conv.lastSenderId || null;
+
+      // Check if there are unread messages - add 1s grace period for clock skew
+      // and ensure it wasn't sent BY the current user
+      const isUnread = lastMessageAt > (lastReadAt + 1000) && 
+                      conv.lastMessage !== 'Conversation started' &&
+                      lastSenderId !== user.uid;
+      
+      return isUnread ? acc + 1 : acc;
+    }, 0);
+  }, [conversations, user?.uid]);
+
   const [isSearchOpen, setIsSearchOpen] = React.useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = React.useState(false);
 
@@ -98,7 +117,7 @@ export const Shell = React.memo(({ children }: { children: React.ReactNode }) =>
   const menuItems = [
     { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
     { to: '/community', icon: <Globe size={18} />, label: 'Community' },
-    { to: '/messages', icon: <MessageSquare size={18} />, label: 'Messages', badgeCount: 2 },
+    { to: '/messages', icon: <MessageSquare size={18} />, label: 'Messages', badgeCount: unreadCount },
     { to: '/settings', icon: <User size={18} />, label: 'Settings' },
   ];
 

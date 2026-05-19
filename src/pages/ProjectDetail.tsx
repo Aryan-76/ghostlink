@@ -39,12 +39,13 @@ import {
   AlertCircle,
   Smile,
   Reply,
+  Edit2,
   MoreHorizontal,
   Activity
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
-import { ref, uploadBytesResumable, getDownloadURL, UploadTaskSnapshot, UploadTask } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL, UploadTaskSnapshot, UploadTask, deleteObject } from 'firebase/storage';
 import { db, storage } from '../lib/firebase';
 import { useAuthStore } from '../store/authStore';
 import { useWorkspace } from '../hooks/useWorkspace';
@@ -118,6 +119,9 @@ export default function ProjectDetail() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [activeUploadTask, setActiveUploadTask] = useState<UploadTask | null>(null);
+  const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editMessageText, setEditMessageText] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [localDoc, setLocalDoc] = useState<{ title: string; content: string } | null>(null);
@@ -188,11 +192,14 @@ export default function ProjectDetail() {
     // Real-time Documents
     const qDocs = query(
       collection(db, 'projects', projectId, 'documents'),
-      orderBy('updatedAt', 'desc')
+      orderBy('createdAt', 'desc')
     );
     const unsubDocs = onSnapshot(qDocs, (snapshot) => {
       const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as DocType[];
+      console.log(`[ProjectDetail] Documents updated: ${items.length} assets`);
       setDocuments(items);
+    }, (error) => {
+      console.error("[ProjectDetail] Documents Listener Error:", error);
     });
 
     return () => {
@@ -234,20 +241,29 @@ export default function ProjectDetail() {
 
   // Handle typing state
   useEffect(() => {
-    if (!projectId || !user) return;
+    if (!projectId || !user || activeTab !== 'chat') return;
     
     const typingRef = doc(db, 'projects', projectId, 'typing', user.uid);
-    if (newMessage.trim() && activeTab === 'chat') {
+    
+    if (newMessage.trim()) {
       setDoc(typingRef, {
         userId: user.uid,
         userName: user.displayName || user.email,
         timestamp: serverTimestamp()
       });
+
+      // Clear typing status after 3 seconds of inactivity
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        deleteDoc(typingRef).catch(() => {});
+      }, 3000);
     } else {
-      deleteDoc(typingRef);
+      deleteDoc(typingRef).catch(() => {});
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     }
     
     return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       deleteDoc(typingRef).catch(() => {});
     };
   }, [newMessage, projectId, user, activeTab]);
@@ -268,6 +284,10 @@ export default function ProjectDetail() {
 
   const handleReaction = async (messageId: string, emoji: string) => {
     if (!projectId || !user) return;
+    if (project?.status === 'archived') {
+      toast.error('Project is archived and read-only.');
+      return;
+    }
     const msgRef = doc(db, 'projects', projectId, 'messages', messageId);
     const msg = messages.find(m => m.id === messageId);
     if (!msg) return;
@@ -293,11 +313,38 @@ export default function ProjectDetail() {
   };
 
   const handleDeleteMessage = async (messageId: string) => {
-    if (!projectId || !user || !window.confirm('Erase this message data?')) return;
+    if (!projectId || !user) return;
+    if (project?.status === 'archived') {
+      toast.error('Project is archived and read-only.');
+      return;
+    }
     try {
       await deleteDoc(doc(db, 'projects', projectId, 'messages', messageId));
+      setMessageToDelete(null);
+      toast.success('Message data purged');
     } catch (e) {
       toast.error('Failed to erase record');
+    }
+  };
+
+  const handleUpdateMessage = async (messageId: string) => {
+    if (!projectId || !user || !editMessageText.trim()) return;
+    if (project?.status === 'archived') {
+      toast.error('Project is archived and read-only.');
+      return;
+    }
+    try {
+      const msgRef = doc(db, 'projects', projectId, 'messages', messageId);
+      await updateDoc(msgRef, {
+        text: editMessageText,
+        edited: true,
+        editedAt: serverTimestamp()
+      });
+      setEditingMessageId(null);
+      setEditMessageText('');
+      toast.success('Signal recalibrated');
+    } catch (e) {
+      toast.error('Failed to update record');
     }
   };
 
@@ -420,34 +467,43 @@ export default function ProjectDetail() {
           toast.error("Transmission interrupted.");
         }, 
         async () => {
-          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-          
-          const docData = {
-            title: file.name,
-            fileName: file.name,
-            fileUrl: downloadURL,
-            storagePath: storagePath,
-            size: file.size,
-            mimeType: file.type,
-            type: 'file',
-            createdBy: user.uid,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp()
-          };
+          try {
+            const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+            
+            const docData = {
+              title: file.name,
+              fileName: file.name,
+              fileUrl: downloadURL,
+              storagePath: storagePath,
+              size: file.size,
+              mimeType: file.type,
+              type: 'file',
+              createdBy: user.uid,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp()
+            };
 
-          const docRef = await addDoc(collection(db, 'projects', projectId, 'documents'), docData);
-          
-          await logActivity({
-            type: 'file_uploaded',
-            title: `Asset "${file.name}" synchronized`,
-            projectId: projectId,
-            targetId: docRef.id
-          });
+            const docRef = await addDoc(collection(db, 'projects', projectId, 'documents'), docData);
+            
+            await logActivity({
+              type: 'file_uploaded',
+              title: `Asset "${file.name}" synchronized`,
+              projectId: projectId,
+              targetId: docRef.id
+            });
 
-          toast.success('Asset synced successfully');
-          setIsUploading(false);
-          setUploadProgress(0);
-          setActiveUploadTask(null);
+            toast.success('Asset synced successfully');
+          } catch (dbError) {
+            console.error("Database write error after upload:", dbError);
+            // Cleanup storage if Firestore write fails
+            const cleanupRef = ref(storage, storagePath);
+            await deleteObject(cleanupRef).catch(e => console.error("Storage cleanup failed:", e));
+            toast.error('Failed to register signal asset.');
+          } finally {
+            setIsUploading(false);
+            setUploadProgress(0);
+            setActiveUploadTask(null);
+          }
         }
       );
 
@@ -487,6 +543,10 @@ export default function ProjectDetail() {
 
   const handleDeleteDoc = async (id: string) => {
     if (!projectId || isDeletingDoc || !window.confirm('Are you sure you want to delete this document?')) return;
+    if (project?.status === 'archived') {
+      toast.error('Project is archived and read-only.');
+      return;
+    }
     
     setIsDeletingDoc(true);
     try {
@@ -733,34 +793,85 @@ export default function ProjectDetail() {
                         )}
 
                         <div className="relative">
-                          <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-sm inline-block text-left ${isMe ? 'bg-app-primary text-white rounded-tr-none' : 'bg-app-card border border-app-border text-app-foreground rounded-tl-none'}`}>
-                            {m.text}
-                          </div>
+                          {editingMessageId === m.id ? (
+                            <div className={`p-1 rounded-2xl shadow-sm inline-block text-left w-full max-w-md ${isMe ? 'bg-app-primary' : 'bg-app-card border border-app-border'}`}>
+                              <textarea
+                                value={editMessageText}
+                                onChange={(e) => setEditMessageText(e.target.value)}
+                                className={`w-full p-3 bg-transparent text-sm resize-none focus:outline-none min-h-[80px] ${isMe ? 'text-white placeholder:text-white/50' : 'text-app-foreground placeholder:text-app-muted'}`}
+                                placeholder="Recalibrate signal..."
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault();
+                                    handleUpdateMessage(m.id);
+                                  } else if (e.key === 'Escape') {
+                                    setEditingMessageId(null);
+                                  }
+                                }}
+                              />
+                              <div className="flex justify-end gap-2 p-2 pt-0">
+                                <button 
+                                  onClick={() => setEditingMessageId(null)}
+                                  className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${isMe ? 'text-white/70 hover:text-white hover:bg-white/10' : 'text-app-muted hover:text-app-foreground hover:bg-app-muted-bg'}`}
+                                >
+                                  Cancel
+                                </button>
+                                <button 
+                                  onClick={() => handleUpdateMessage(m.id)}
+                                  className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${isMe ? 'bg-white text-app-primary hover:bg-white/90 shadow-lg' : 'bg-app-primary text-white hover:bg-app-primary/90 shadow-lg'}`}
+                                >
+                                  Save
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-sm inline-block text-left ${isMe ? 'bg-app-primary text-white rounded-tr-none' : 'bg-app-card border border-app-border text-app-foreground rounded-tl-none'}`}>
+                                {m.text}
+                                {m.edited && (
+                                  <span className={`block text-[8px] font-bold uppercase tracking-widest mt-1 opacity-40 ${isMe ? 'text-white' : 'text-app-muted'}`}>
+                                    (signal recalibrated)
+                                  </span>
+                                )}
+                              </div>
 
-                          {/* Message Actions */}
-                          <div className={`absolute top-0 opacity-0 group-hover/msg:opacity-100 transition-all flex items-center gap-1 p-1 bg-app-card border border-app-border rounded-lg shadow-xl z-10 ${isMe ? 'right-full mr-2' : 'left-full ml-2'}`}>
-                            <button 
-                              onClick={() => setReplyingTo(m)}
-                              className="p-1.5 text-app-muted hover:text-app-foreground hover:bg-app-muted-bg rounded transition-all"
-                              title="Reply"
-                            >
-                              <Reply size={14} />
-                            </button>
-                            <button 
-                              onClick={() => handleReaction(m.id, '👍')}
-                              className="p-1.5 text-app-muted hover:text-app-foreground hover:bg-app-muted-bg rounded transition-all"
-                            >
-                              <Smile size={14} />
-                            </button>
-                            {isMe && (
-                              <button 
-                                onClick={() => handleDeleteMessage(m.id)}
-                                className="p-1.5 text-app-muted hover:text-red-500 hover:bg-red-500/10 rounded transition-all"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            )}
-                          </div>
+                              {/* Message Actions */}
+                              <div className={`absolute top-0 opacity-0 group-hover/msg:opacity-100 transition-all flex items-center gap-1 p-1 bg-app-card border border-app-border rounded-lg shadow-xl z-10 ${isMe ? 'right-full mr-2' : 'left-full ml-2'}`}>
+                                <button 
+                                  onClick={() => setReplyingTo(m)}
+                                  className="p-1.5 text-app-muted hover:text-app-foreground hover:bg-app-muted-bg rounded transition-all"
+                                  title="Reply"
+                                >
+                                  <Reply size={14} />
+                                </button>
+                                <button 
+                                  onClick={() => handleReaction(m.id, '👍')}
+                                  className="p-1.5 text-app-muted hover:text-app-foreground hover:bg-app-muted-bg rounded transition-all"
+                                >
+                                  <Smile size={14} />
+                                </button>
+                                {isMe && (
+                                  <>
+                                    <button 
+                                      onClick={() => { setEditingMessageId(m.id); setEditMessageText(m.text); }}
+                                      className="p-1.5 text-app-muted hover:text-app-primary hover:bg-app-primary/10 rounded transition-all"
+                                      title="Edit"
+                                    >
+                                      <Edit2 size={14} />
+                                    </button>
+                                    <button 
+                                      onClick={() => setMessageToDelete(m.id)}
+                                      className="p-1.5 text-app-muted hover:text-red-500 hover:bg-red-500/10 rounded transition-all"
+                                      title="Delete"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </>
+                          )}
                         </div>
 
                         {/* Reactions and Seen Status */}
@@ -811,21 +922,12 @@ export default function ProjectDetail() {
                   );
                 })}
                 
-                {typingUsers.length > 0 && (
-                  <div className="flex items-center gap-2 text-[10px] text-app-muted font-bold uppercase tracking-widest animate-pulse ml-14">
-                    <div className="flex gap-1">
-                      <span className="w-1.5 h-1.5 bg-app-primary rounded-full animate-bounce" style={{ animationDelay: '0s' }} />
-                      <span className="w-1.5 h-1.5 bg-app-primary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
-                      <span className="w-1.5 h-1.5 bg-app-primary rounded-full animate-bounce" style={{ animationDelay: '0.4s' }} />
-                    </div>
-                    <span>{typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...</span>
-                  </div>
-                )}
                 <div ref={messagesEndRef} />
               </div>
 
-              {replyingTo && (
-                <div className="mx-8 mb-0 p-4 bg-app-accent/30 border-t border-x border-app-border rounded-t-2xl flex items-center justify-between animate-in slide-in-from-bottom-2">
+              <div className="px-8 flex flex-col gap-2">
+                {replyingTo && (
+                  <div className="p-4 bg-app-accent/30 border-t border-x border-app-border rounded-t-2xl flex items-center justify-between animate-in slide-in-from-bottom-2">
                   <div className="flex items-center gap-4 min-w-0">
                     <Reply size={14} className="text-app-primary flex-shrink-0" />
                     <div className="min-w-0">
@@ -838,6 +940,7 @@ export default function ProjectDetail() {
                   </button>
                 </div>
               )}
+              </div>
               
               <div className="p-6 bg-app-card border-t border-app-border shadow-2xl relative z-10">
                 <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto relative group">
@@ -845,7 +948,7 @@ export default function ProjectDetail() {
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Type a message..."
+                    placeholder="Establish signal link..."
                     className="w-full bg-app-muted-bg border border-app-border rounded-xl pl-6 pr-16 py-4 text-sm text-app-foreground focus:outline-none focus:ring-2 focus:ring-app-primary/20 focus:border-app-primary/40 transition-all placeholder:text-app-muted"
                   />
                   <button 
@@ -855,6 +958,41 @@ export default function ProjectDetail() {
                     <Send size={18} />
                   </button>
                 </form>
+              </div>
+
+              {/* Typing indicators moved below input area per request */}
+              <div className="h-8 px-8 flex items-center shrink-0">
+                <AnimatePresence>
+                  {typingUsers.length > 0 && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      className="flex items-center gap-3 text-[10px] text-app-primary font-bold uppercase tracking-[0.2em]"
+                    >
+                      <div className="flex gap-1.5 item-center">
+                        <motion.span 
+                          animate={{ opacity: [0.4, 1, 0.4] }}
+                          transition={{ duration: 1.5, repeat: Infinity, delay: 0 }}
+                          className="w-1 h-1 bg-app-primary rounded-full shadow-[0_0_5px_rgba(79,70,229,0.8)]" 
+                        />
+                        <motion.span 
+                          animate={{ opacity: [0.4, 1, 0.4] }}
+                          transition={{ duration: 1.5, repeat: Infinity, delay: 0.2 }}
+                          className="w-1 h-1 bg-app-primary rounded-full shadow-[0_0_5px_rgba(79,70,229,0.8)]" 
+                        />
+                        <motion.span 
+                          animate={{ opacity: [0.4, 1, 0.4] }}
+                          transition={{ duration: 1.5, repeat: Infinity, delay: 0.4 }}
+                          className="w-1 h-1 bg-app-primary rounded-full shadow-[0_0_5px_rgba(79,70,229,0.8)]" 
+                        />
+                      </div>
+                      <span className="animate-pulse">
+                        {typingUsers.length > 2 ? 'Multiple nexus nodes' : typingUsers.join(' & ')} {typingUsers.length === 1 ? 'is' : 'are'} synchronizing...
+                      </span>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </motion.div>
           )}
@@ -1236,6 +1374,49 @@ export default function ProjectDetail() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {messageToDelete && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setMessageToDelete(null)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-sm bg-app-card border border-app-border rounded-3xl shadow-2xl p-8 text-center"
+            >
+              <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500 mx-auto mb-6">
+                <AlertCircle size={32} />
+              </div>
+              <h3 className="text-xl font-bold text-app-foreground tracking-tight uppercase mb-2">Purge Signal?</h3>
+              <p className="text-sm text-app-muted font-medium leading-relaxed mb-8">
+                This action will permanently erase the message data from the GhostLink nexus. This cannot be undone.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <button 
+                  onClick={() => setMessageToDelete(null)}
+                  className="px-6 py-3 bg-app-muted-bg border border-app-border rounded-xl text-[10px] font-bold text-app-foreground uppercase tracking-widest hover:bg-app-card transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => handleDeleteMessage(messageToDelete)}
+                  className="px-6 py-3 bg-red-500 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest hover:opacity-90 transition-all shadow-lg shadow-red-500/20"
+                >
+                  Confirm Purge
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Team Invite Modal */}
       <AnimatePresence>
